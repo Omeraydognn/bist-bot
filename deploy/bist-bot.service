@@ -1,0 +1,18 @@
+[Unit]
+Description=BIST Trading Bot (sinyal + paper trading + Telegram)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=KULLANICI_ADI
+WorkingDirectory=/home/KULLANICI_ADI/bist_bot
+EnvironmentFile=/home/KULLANICI_ADI/bist_bot/.env
+ExecStart=/home/KULLANICI_ADI/bist_bot/venv/bin/python run_bot.py
+Restart=always
+RestartSec=10
+# Bellek guvenligi: 512MB'i asarsa yeniden baslat (kacak onlemi)
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

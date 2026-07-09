@@ -1,0 +1,96 @@
+# =========================================================
+# BIST BOT - MERKEZI KONFIGURASYON
+# Yeni bir hisse eklemek icin SADECE "tickers" listesine
+# yeni bir blok eklemen yeterli. Kod tarafinda hicbir yeri
+# degistirmene gerek yok (mimari tamamen ticker-agnostic).
+# =========================================================
+
+tickers:
+  - symbol: "ASELS"          # BIST kodu (KAP / Matriks / Takasbank vs. bu kodu kullanir)
+    yahoo_symbol: "ASELS.IS" # yfinance / Yahoo Finance icin uzanti
+    name: "Aselsan"
+    sector: "Savunma Sanayii"
+    enabled: true
+
+  # Yeni hisse eklemek icin ornek (yorum satirini acip doldurman yeterli):
+  # - symbol: "THYAO"
+  #   yahoo_symbol: "THYAO.IS"
+  #   name: "Turk Hava Yollari"
+  #   sector: "Havacilik"
+  #   enabled: true
+
+# ---------------------------------------------------------
+# Veri kaynaklari - hangi modulun kullanilacagi, gerekirse
+# API anahtarlari (gercek anahtarlari .env dosyasina koy,
+# burada sadece hangi kaynagin AKTIF oldugunu belirt)
+# ---------------------------------------------------------
+data_sources:
+  price:
+    provider: "yahoo"          # ileride "algolab", "matriks" eklenebilir
+    # Bot TUM bu zaman dilimlerini birlikte okur (coklu zaman dilimi analizi):
+    timeframes:
+      - interval: "15m"
+        lookback_days: 55       # yfinance 15dk veriyi ~60 gune kadar verir
+      - interval: "30m"
+        lookback_days: 55
+      - interval: "1h"
+        lookback_days: 180
+      - interval: "1d"
+        lookback_days: 730
+
+  news:
+    provider: "kap"             # KAP - resmi ve en guvenilir kaynak
+    poll_interval_minutes: 15
+
+  depth:
+    provider: "none"            # broker API baglanana kadar pasif (ornek: "algolab")
+    enabled: false
+
+  akd_takas:
+    provider: "none"            # ileride Takasbank/Matriks entegre edilecek
+    enabled: false
+
+# ---------------------------------------------------------
+# Analiz agirliklari - karar motoru bu agirliklarla
+# tum sinyalleri birlestirip tek bir skor uretir (-1..+1)
+# Toplamlari 1.0 olacak sekilde ayarlanmalidir.
+# ---------------------------------------------------------
+scoring_weights:
+  technical: 0.45
+  news_sentiment: 0.25
+  fundamental: 0.15
+  depth: 0.10
+  akd_takas: 0.05
+
+# ---------------------------------------------------------
+# Karar esikleri
+# ---------------------------------------------------------
+decision_thresholds:
+  buy: 0.30      # skor >= 0.30 -> AL
+  sell: -0.30    # skor <= -0.30 -> SAT
+  # arasi -> TUT
+
+# ---------------------------------------------------------
+# Depolama
+# ---------------------------------------------------------
+storage:
+  type: "sqlite"
+  path: "data_store/bist_bot.db"
+
+# ---------------------------------------------------------
+# Risk yonetimi (backtest ve ileride execution icin)
+# ---------------------------------------------------------
+risk:
+  max_position_pct: 0.20     # portfoyun en fazla %20'si tek hissede
+  take_profit_pct: 0.04      # Esnek Hedef: %4 kâr beklentisi (Momentum kırılırsa daha erken SAT verebilir)
+  stop_loss_pct: 0.02        # Koruma: %2 terste kalırsa ana parayı korumak için zararı kes
+
+# ---------------------------------------------------------
+# Seans (BIST 10:00 - 18:00) davranisi
+# ---------------------------------------------------------
+session:
+  respect_market_hours: true      # seans disinda aksiyon onerme
+  avoid_after_open_min: 15        # acilistan sonra ilk 15 dk pozisyon acma
+  avoid_before_close_min: 20      # kapanisa 20 dk kala yeni pozisyon acma
+  force_close_before_min: 10      # kapanisa 10 dk kala pozisyonlari kapat
+  intraday_only: true             # gece pozisyon tasima (gap riski)
