@@ -81,13 +81,19 @@ class AlgolabPriceFetcher(BasePriceFetcher):
 
 
 class TVPriceFetcher(BasePriceFetcher):
-    def fetch_ohlcv(self, symbol: str, lookback_days: int = 60, interval: str = "15m") -> list[dict[str, Any]]:
+    def __init__(self):
         try:
-            from tvDatafeed import TvDatafeed, Interval
+            from tvDatafeed import TvDatafeed
+            import logging
+            logging.getLogger('tvDatafeed').setLevel(logging.ERROR)
+            self.tv = TvDatafeed() # Tek seferlik giris yapilir
         except ImportError as e:
             raise RuntimeError(
                 "tvDatafeed kurulu degil. `pip install git+https://github.com/rongardF/tvdatafeed.git` calistir."
             ) from e
+
+    def fetch_ohlcv(self, symbol: str, lookback_days: int = 60, interval: str = "15m") -> list[dict[str, Any]]:
+        from tvDatafeed import Interval
 
         # TradingView "BIST" borsasini kullanir, ".IS" uzantisini kaldiralim
         clean_symbol = symbol.split(".")[0] if "." in symbol else symbol
@@ -109,13 +115,24 @@ class TVPriceFetcher(BasePriceFetcher):
         }
         bars_to_fetch = min(n_bars_map.get(interval, lookback_days * 32), 4900)
 
-        # tvDatafeed uyarilarini gizle
-        import logging
-        logging.getLogger('tvDatafeed').setLevel(logging.ERROR)
-        
-        tv = TvDatafeed()
-        df = tv.get_hist(symbol=clean_symbol, exchange='BIST', interval=tv_interval, n_bars=bars_to_fetch)
-        
+        # Baglanti kopuklugu ihtimaline karsi 3 deneme yapalim
+        df = None
+        for _ in range(3):
+            try:
+                df = self.tv.get_hist(symbol=clean_symbol, exchange='BIST', interval=tv_interval, n_bars=bars_to_fetch)
+                if df is not None and not df.empty:
+                    break
+            except Exception:
+                pass
+            import time
+            time.sleep(1)
+            # Eger hala calismiyorsa yeniden baslat
+            try:
+                from tvDatafeed import TvDatafeed
+                self.tv = TvDatafeed()
+            except:
+                pass
+
         if df is None or df.empty:
             return []
 
