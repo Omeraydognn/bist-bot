@@ -80,6 +80,58 @@ class AlgolabPriceFetcher(BasePriceFetcher):
         raise NotImplementedError("Algolab gecmis mum verisi entegrasyonu henuz eklenmedi.")
 
 
+class TVPriceFetcher(BasePriceFetcher):
+    def fetch_ohlcv(self, symbol: str, lookback_days: int = 60, interval: str = "15m") -> list[dict[str, Any]]:
+        try:
+            from tvDatafeed import TvDatafeed, Interval
+        except ImportError as e:
+            raise RuntimeError(
+                "tvDatafeed kurulu degil. `pip install git+https://github.com/rongardF/tvdatafeed.git` calistir."
+            ) from e
+
+        # TradingView "BIST" borsasini kullanir, ".IS" uzantisini kaldiralim
+        clean_symbol = symbol.split(".")[0] if "." in symbol else symbol
+
+        interval_map = {
+            "15m": Interval.in_15_minute,
+            "30m": Interval.in_30_minute,
+            "1h": Interval.in_1_hour,
+            "1d": Interval.in_daily,
+        }
+        tv_interval = interval_map.get(interval, Interval.in_15_minute)
+
+        # Kac bar cekilecegini hesapla
+        n_bars_map = {
+            "15m": lookback_days * 32,
+            "30m": lookback_days * 16,
+            "1h": lookback_days * 8,
+            "1d": lookback_days * 1
+        }
+        bars_to_fetch = min(n_bars_map.get(interval, lookback_days * 32), 4900)
+
+        # tvDatafeed uyarilarini gizle
+        import logging
+        logging.getLogger('tvDatafeed').setLevel(logging.ERROR)
+        
+        tv = TvDatafeed()
+        df = tv.get_hist(symbol=clean_symbol, exchange='BIST', interval=tv_interval, n_bars=bars_to_fetch)
+        
+        if df is None or df.empty:
+            return []
+
+        rows = []
+        for idx, row in df.iterrows():
+            rows.append({
+                "date": idx.strftime("%Y-%m-%d %H:%M:%S"),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+            })
+        return rows
+
+
 def get_price_fetcher(provider: str = "yahoo") -> BasePriceFetcher:
     """Provider ismine gore dogru fetcher'i dondurur (factory pattern).
 
@@ -89,7 +141,7 @@ def get_price_fetcher(provider: str = "yahoo") -> BasePriceFetcher:
     providers = {
         "yahoo": YahooPriceFetcher,
         "algolab": AlgolabPriceFetcher,
-        # "matriks": MatriksPriceFetcher,   # ileride eklenecek
+        "tradingview": TVPriceFetcher,
     }
     if provider not in providers:
         raise ValueError(f"Bilinmeyen fiyat veri kaynagi: {provider}")

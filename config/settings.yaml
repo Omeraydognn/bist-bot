@@ -26,7 +26,7 @@ tickers:
 # ---------------------------------------------------------
 data_sources:
   price:
-    provider: "yahoo"          # ileride "algolab", "matriks" eklenebilir
+    provider: "tradingview"          # "yahoo", "algolab", veya "tradingview"
     # Bot TUM bu zaman dilimlerini birlikte okur (coklu zaman dilimi analizi):
     timeframes:
       - interval: "15m"
