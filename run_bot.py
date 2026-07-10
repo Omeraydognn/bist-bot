@@ -11,7 +11,13 @@ Kullanim:
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
+
+# Sunucularda (Render vb.) saat dilimi hatasini onlemek icin Turkiye saati zorunlu kilinir
+os.environ["TZ"] = "Europe/Istanbul"
+if hasattr(time, "tzset"):
+    time.tzset()
 
 # .env yukle (python-dotenv varsa onu kullan, yoksa basit parser)
 env_path = Path(__file__).parent / ".env"
