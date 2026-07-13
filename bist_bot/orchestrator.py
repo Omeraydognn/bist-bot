@@ -30,6 +30,7 @@ from bist_bot.analysis.scalping import CostModel
 from bist_bot.market.session import get_session_state
 from bist_bot.trading.paper_trader import PaperTrader
 from bist_bot.notify.telegram_notifier import TelegramNotifier
+from bist_bot.ai.brain import AIBrain
 
 
 class Orchestrator:
@@ -50,6 +51,14 @@ class Orchestrator:
         else:
             self.paper = None
         self.notifier = TelegramNotifier()
+
+        # AI Beyin: NVIDIA NIM API uzerinden calisan ust karar motoru
+        ai_cfg = self.config.ai
+        self.ai_brain = AIBrain(
+            model=ai_cfg.get('model', 'nvidia/llama-3.1-nemotron-ultra-253b-v1'),
+            temperature=ai_cfg.get('temperature', 0.1),
+        )
+        self.ai_fallback = ai_cfg.get('fallback_to_math', True)
 
     # ------------------------------------------------------------
     def fetch_all_timeframes(self, ticker: TickerConfig) -> dict[str, list[dict]]:
@@ -163,6 +172,27 @@ class Orchestrator:
                 "beklenen_net_pct": mtf.scalp_signal.expected_net_pct,
             } if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else None,
         }
+
+        # =====================================================
+        # AI BEYİN: Nihai karar burada verilir
+        # Matematik motor "danışman", AI "başkomutan"
+        # =====================================================
+        if self.ai_brain.enabled:
+            ai_decision = self.ai_brain.decide(result)
+            if ai_decision is not None:
+                old_action = result["aksiyon"]
+                result["aksiyon"] = ai_decision.action
+                result["ai_gerekce"] = ai_decision.reasoning
+                result["ai_guven"] = ai_decision.confidence
+                result["ai_veto"] = ai_decision.vetoed
+                action = ai_decision.action  # Paper trading de AI kararini kullansin
+                if ai_decision.vetoed:
+                    print(f"  [AI VETO] Matematik: {old_action} → AI: {ai_decision.action} | {ai_decision.reasoning}")
+                else:
+                    print(f"  [AI ONAY] {ai_decision.action} | {ai_decision.reasoning}")
+            elif self.ai_fallback:
+                result["ai_gerekce"] = "AI yanıt veremedi, matematik motor kararı korundu."
+                print("  [AI] Fallback: matematik motor karari korundu.")
 
         # PAPER TRADING: sinyali sanal portfoye uygula
         if self.paper is not None:

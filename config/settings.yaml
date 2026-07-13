@@ -90,3 +90,13 @@ session:
   avoid_before_close_min: 20      # kapanisa 20 dk kala yeni pozisyon acma
   force_close_before_min: 10      # kapanisa 10 dk kala pozisyonlari kapat
   intraday_only: true             # gece pozisyon tasima (gap riski)
+
+# ---------------------------------------------------------
+# AI Beyin (NVIDIA NIM API)
+# ---------------------------------------------------------
+ai:
+  enabled: true
+  provider: "nvidia"                                      # nvidia, openai, anthropic
+  model: "nvidia/llama-3.1-nemotron-ultra-253b-v1"        # NVIDIA NIM ucretsiz modeli
+  temperature: 0.1        # Dusuk = tutarli kararlar, yuksek = yaratici
+  fallback_to_math: true  # AI cokerse matematik motora geri dus

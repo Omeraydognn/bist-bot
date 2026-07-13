@@ -65,6 +65,10 @@ class AppConfig:
         return self.raw.get("risk", {})
 
     @property
+    def ai(self) -> dict:
+        return self.raw.get("ai", {})
+
+    @property
     def db_path(self) -> Path:
         rel_path = self.storage.get("path", "data_store/bist_bot.db")
         p = PROJECT_ROOT / rel_path

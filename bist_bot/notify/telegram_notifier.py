@@ -96,6 +96,9 @@ class TelegramNotifier:
                          f"| Beklenen net: %{scalp['beklenen_net_pct']}")
         if result.get("firsat_notu"):
             lines.append(f"Katmanlar: {result['firsat_notu']}")
+        if result.get("ai_gerekce"):
+            veto_icon = "⚡" if result.get("ai_veto") else "✅"
+            lines.append(f"🧠 AI: {veto_icon} {result['ai_gerekce']}")
         if result.get("seans") and result["seans"] != "-" and "Normal" not in result["seans"]:
             lines.append(f"⏰ {result['seans']}")
         lines.append(f"<i>{result.get('zaman', datetime.now().strftime('%H:%M'))}</i>")
