@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS paper_positions (
     shares      REAL NOT NULL,
     entry_price REAL NOT NULL,
     entry_time  TEXT NOT NULL,
-    stop_pct    REAL,
+    stop_price  REAL,
     target_pct  REAL
 );
 
@@ -133,9 +133,10 @@ class PaperTrader:
                 shares = (budget - fee) / price
                 new_cash = account["cash"] - budget
                 conn.execute("UPDATE paper_account SET cash=? WHERE id=1", (new_cash,))
+                initial_stop = price * (1 - stop_pct / 100) if stop_pct else None
                 conn.execute(
-                    "INSERT INTO paper_positions (symbol, shares, entry_price, entry_time, stop_pct, target_pct) VALUES (?,?,?,?,?,?)",
-                    (symbol, shares, price, datetime.now().isoformat(), stop_pct, target_pct),
+                    "INSERT INTO paper_positions (symbol, shares, entry_price, entry_time, stop_price, target_pct) VALUES (?,?,?,?,?,?)",
+                    (symbol, shares, price, datetime.now().isoformat(), initial_stop, target_pct),
                 )
                 conn.execute(
                     "INSERT INTO paper_trades (symbol, action, price, shares, fee, reason, ts) VALUES (?,?,?,?,?,?,?)",
@@ -193,13 +194,24 @@ class PaperTrader:
                     continue
 
                 change_pct = (price - pos["entry_price"]) / pos["entry_price"] * 100
-                if pos["stop_pct"] and change_pct <= -pos["stop_pct"]:
-                    # Stop emri tetik SEVIYESINDEN gerceklesir (anlik fiyattan degil);
-                    # hizli dususte ufak ek kayma olabilir, kucuk pay eklenir.
-                    stop_price = pos["entry_price"] * (1 - pos["stop_pct"] / 100)
-                    exec_price = min(stop_price, price * 1.001)  # fiyat coktan asagidaysa gercekci ol
-                    exec_price = max(exec_price, price)  # ama anlik fiyatin altina da inme
-                    r = self._close_position(conn, pos, exec_price, f"stop-loss (%{pos['stop_pct']})")
+                
+                # Dinamik Izleyen Stop (Trailing Stop) Mantigi
+                current_stop = pos["stop_price"]
+                new_stop = current_stop
+                if change_pct >= 2.0:
+                    new_stop = pos["entry_price"] * 1.01  # %2 kara ulasilirsa stop %1'e tasinir
+                elif change_pct >= 1.0:
+                    new_stop = pos["entry_price"] * 1.002 # %1 kara ulasilirsa stop %0.2'ye tasinir
+                
+                if new_stop and (current_stop is None or new_stop > current_stop):
+                    conn.execute("UPDATE paper_positions SET stop_price=? WHERE symbol=?", (new_stop, pos["symbol"]))
+                    current_stop = new_stop
+
+                if current_stop and price <= current_stop:
+                    # Stop emri tetik SEVIYESINDEN gerceklesir
+                    exec_price = min(current_stop, price * 1.001)
+                    exec_price = max(exec_price, price)
+                    r = self._close_position(conn, pos, exec_price, f"izleyen stop-loss ({current_stop:.2f})")
                     messages.append(r["message"])
                 elif pos["target_pct"] and change_pct >= pos["target_pct"]:
                     target_price = pos["entry_price"] * (1 + pos["target_pct"] / 100)

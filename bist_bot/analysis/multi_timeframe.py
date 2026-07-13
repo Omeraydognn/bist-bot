@@ -33,10 +33,8 @@ from bist_bot.market.session import get_session_state, SessionState
 # Katman agirliklari: zamanlama katmanlari daha agir cunku scalping yapiyoruz,
 # ama gunluk trend veto gucune sahip (asagida trend_veto mantigi)
 TIMEFRAME_WEIGHTS = {
-    "1d": 0.05,
-    "1h": 0.15,
-    "30m": 0.30,
-    "15m": 0.50,
+    "15m": 0.40,
+    "5m": 0.60,
 }
 
 
@@ -60,6 +58,17 @@ def analyze_mtf(
     buy_threshold: float = 0.25,
     sell_threshold: float = -0.25,
 ) -> MTFResult:
+    import numpy as np
+    from datetime import datetime
+    import pytz
+    
+    tz = pytz.timezone('Europe/Istanbul')
+    now = datetime.now(tz).time()
+    
+    # Morning Gap Filtresi (10:00 - 10:15)
+    t_10_00 = datetime.strptime("10:00", "%H:%M").time()
+    t_10_15 = datetime.strptime("10:15", "%H:%M").time()
+    is_morning_gap = t_10_00 <= now <= t_10_15
     cost_model = cost_model or CostModel()
     session = get_session_state() if check_session else None
 
@@ -73,6 +82,14 @@ def analyze_mtf(
             per_tf[tf] = {"score": None, "note": "veri yok/yetersiz"}
             continue
         res = technical.analyze(rows)
+        
+        if is_morning_gap:
+            sub = res.get("details", {}).get("sub_scores", {})
+            valid_subs = {k: v for k, v in sub.items() if k not in ["rsi", "bollinger"]}
+            if valid_subs:
+                adjusted_score = float(np.clip(sum(valid_subs.values()) / len(valid_subs), -1, 1))
+                res["score"] = adjusted_score
+        
         per_tf[tf] = {
             "score": round(res["score"], 3),
             "rsi": res["details"].get("rsi"),
@@ -90,9 +107,9 @@ def analyze_mtf(
 
     combined = weighted_sum / weight_used  # eksik katmanlar otomatik normalize
 
-    # 15dk katmaninda scalp firsati var mi? (giris tetigi)
+    # 5dk veya 15dk katmaninda scalp firsati var mi? (giris tetigi)
     scalp = None
-    trigger_frame = frames.get("15m") or frames.get("30m") or frames.get("1h") or frames.get("1d")
+    trigger_frame = frames.get("5m") or frames.get("15m")
     if trigger_frame and len(trigger_frame) >= 25:
         scalp = analyze_scalp(trigger_frame, cost_model=cost_model, min_net_edge_pct=min_net_edge_pct)
 

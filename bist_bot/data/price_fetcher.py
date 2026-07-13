@@ -99,6 +99,7 @@ class TVPriceFetcher(BasePriceFetcher):
         clean_symbol = symbol.split(".")[0] if "." in symbol else symbol
 
         interval_map = {
+            "5m": Interval.in_5_minute,
             "15m": Interval.in_15_minute,
             "30m": Interval.in_30_minute,
             "1h": Interval.in_1_hour,
@@ -108,6 +109,7 @@ class TVPriceFetcher(BasePriceFetcher):
 
         # Kac bar cekilecegini hesapla
         n_bars_map = {
+            "5m": lookback_days * 96,
             "15m": lookback_days * 32,
             "30m": lookback_days * 16,
             "1h": lookback_days * 8,

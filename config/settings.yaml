@@ -29,14 +29,10 @@ data_sources:
     provider: "tradingview"          # "yahoo", "algolab", veya "tradingview"
     # Bot TUM bu zaman dilimlerini birlikte okur (coklu zaman dilimi analizi):
     timeframes:
+      - interval: "5m"
+        lookback_days: 10
       - interval: "15m"
-        lookback_days: 55       # yfinance 15dk veriyi ~60 gune kadar verir
-      - interval: "30m"
-        lookback_days: 55
-      - interval: "1h"
-        lookback_days: 180
-      - interval: "1d"
-        lookback_days: 730
+        lookback_days: 20
 
   news:
     provider: "kap"             # KAP - resmi ve en guvenilir kaynak

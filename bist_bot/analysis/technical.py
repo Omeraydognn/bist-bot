@@ -21,8 +21,14 @@ def _to_dataframe(price_rows: list[dict]) -> pd.DataFrame:
     return df
 
 
-def compute_sma(df: pd.DataFrame, window: int) -> pd.Series:
-    return df["close"].rolling(window=window).mean()
+def compute_vwap(df: pd.DataFrame) -> pd.Series:
+    """Gun ici (intraday) kumulatif VWAP hesaplar."""
+    df_temp = df.copy()
+    df_temp['typical_price'] = (df_temp['high'] + df_temp['low'] + df_temp['close']) / 3
+    df_temp['vp'] = df_temp['typical_price'] * df_temp['volume']
+    df_temp['date_only'] = df_temp['date'].dt.date
+    vwap = df_temp.groupby('date_only')['vp'].cumsum() / df_temp.groupby('date_only')['volume'].cumsum()
+    return vwap
 
 
 def compute_ema(df: pd.DataFrame, window: int) -> pd.Series:
@@ -50,7 +56,7 @@ def compute_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int =
 
 
 def compute_bollinger(df: pd.DataFrame, window: int = 20, num_std: float = 2.0):
-    sma = compute_sma(df, window)
+    sma = df["close"].rolling(window=window).mean()
     std = df["close"].rolling(window=window).std()
     upper = sma + num_std * std
     lower = sma - num_std * std
@@ -90,8 +96,8 @@ def analyze(price_rows: list[dict]) -> dict:
     upper, mid, lower = compute_bollinger(df)
     close_last = df["close"].iloc[-1]
     upper_last, mid_last, lower_last = upper.iloc[-1], mid.iloc[-1], lower.iloc[-1]
-    sma20 = compute_sma(df, 20).iloc[-1]
-    sma50 = compute_sma(df, 50).iloc[-1] if len(df) >= 50 else np.nan
+    vwap_series = compute_vwap(df)
+    vwap_last = vwap_series.iloc[-1] if not vwap_series.empty else np.nan
     vol_score = compute_volume_signal(df)
     
     ema5_series = compute_ema(df, 5)
@@ -102,36 +108,37 @@ def analyze(price_rows: list[dict]) -> dict:
     ema15_prev = ema15_series.iloc[-2] if len(df) >= 2 else np.nan
 
     sub_scores = {}
+    
+    # Dususte Veto Durumu (State)
+    is_downtrend = ema5_last < ema15_last
 
-    # --- RSI: 30 alti asiri satim (alim firsati), 70 ustu asiri alim (satim sinyali)
+    # --- RSI
     if pd.isna(rsi):
         sub_scores["rsi"] = 0.0
     elif rsi < 30:
-        sub_scores["rsi"] = 0.6
+        sub_scores["rsi"] = 0.0 if is_downtrend else 0.6  # VETO KURALI
     elif rsi > 70:
         sub_scores["rsi"] = -0.6
     else:
-        # 30-70 arasini lineer -1..1 skalasina değil, notr agirlikli haritalar
         sub_scores["rsi"] = float(np.interp(rsi, [30, 50, 70], [0.3, 0.0, -0.3]))
+        if is_downtrend and sub_scores["rsi"] > 0:
+            sub_scores["rsi"] = 0.0  # VETO KURALI
 
-    # --- MACD: histogram pozitif ve artan -> al, negatif ve azalan -> sat
+    # --- MACD
     if pd.isna(hist_last):
         sub_scores["macd"] = 0.0
     else:
         sub_scores["macd"] = float(np.clip(hist_last / (abs(close_last) * 0.01 + 1e-9), -1, 1)) * 0.5
 
-    # --- Bollinger: fiyat alt banda yakinsa alim, ust banda yakinsa satim sinyali
+    # --- Bollinger
     if pd.isna(upper_last) or pd.isna(lower_last) or upper_last == lower_last:
         sub_scores["bollinger"] = 0.0
     else:
         position = (close_last - lower_last) / (upper_last - lower_last)  # 0..1
-        sub_scores["bollinger"] = float(np.interp(position, [0, 0.5, 1], [0.5, 0.0, -0.5]))
-
-    # --- Trend: SMA20 > SMA50 -> yukselis trendi
-    if pd.isna(sma50):
-        sub_scores["trend"] = 0.0
-    else:
-        sub_scores["trend"] = 0.4 if sma20 > sma50 else -0.4
+        b_score = float(np.interp(position, [0, 0.5, 1], [0.5, 0.0, -0.5]))
+        if is_downtrend and b_score > 0:
+            b_score = 0.0  # VETO KURALI
+        sub_scores["bollinger"] = b_score
 
     # --- EMA 5-15 Kesişimi
     if pd.isna(ema15_last) or pd.isna(ema15_prev):
@@ -147,20 +154,25 @@ def analyze(price_rows: list[dict]) -> dict:
     # --- Hacim
     sub_scores["volume"] = vol_score
 
-    # Basit ortalama (ileride agirliklandirilabilir)
+    # Nihai Skor
     final_score = float(np.clip(sum(sub_scores.values()) / len(sub_scores), -1, 1))
+    
+    veto_reason = ""
+    # --- VWAP VETO
+    if not pd.isna(vwap_last) and close_last < vwap_last and final_score > 0:
+        final_score = 0.0
+        veto_reason = " (VWAP Veto: Fiyat VWAP altinda)"
 
     return {
         "score": final_score,
-        "reason": "Teknik gostergelerin (RSI, MACD, Bollinger, trend, hacim) birlesik skoru",
+        "reason": f"Koşullu State-Machine skoru{veto_reason}",
         "details": {
             "rsi": None if pd.isna(rsi) else round(float(rsi), 2),
             "macd_hist": None if pd.isna(hist_last) else round(float(hist_last), 4),
             "close": round(float(close_last), 2),
+            "vwap": None if pd.isna(vwap_last) else round(float(vwap_last), 2),
             "bollinger_upper": None if pd.isna(upper_last) else round(float(upper_last), 2),
             "bollinger_lower": None if pd.isna(lower_last) else round(float(lower_last), 2),
-            "sma20": None if pd.isna(sma20) else round(float(sma20), 2),
-            "sma50": None if pd.isna(sma50) else round(float(sma50), 2),
             "ema5": None if pd.isna(ema5_last) else round(float(ema5_last), 2),
             "ema15": None if pd.isna(ema15_last) else round(float(ema15_last), 2),
             "sub_scores": {k: round(v, 3) for k, v in sub_scores.items()},
