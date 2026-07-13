@@ -66,8 +66,8 @@ scoring_weights:
 # Karar esikleri
 # ---------------------------------------------------------
 decision_thresholds:
-  buy: 0.30      # skor >= 0.30 -> AL
-  sell: -0.30    # skor <= -0.30 -> SAT
+  buy: 0.15      # Eskiden 0.30'du. Artik cok kucuk bir yukselis sinyalinde hemen AL diyecek
+  sell: -0.15    # Eskiden -0.30'du. Artik %1-2'lik dusus hissettiginde aninda SAT diyecek
   # arasi -> TUT
 
 # ---------------------------------------------------------

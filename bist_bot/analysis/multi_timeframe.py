@@ -33,10 +33,10 @@ from bist_bot.market.session import get_session_state, SessionState
 # Katman agirliklari: zamanlama katmanlari daha agir cunku scalping yapiyoruz,
 # ama gunluk trend veto gucune sahip (asagida trend_veto mantigi)
 TIMEFRAME_WEIGHTS = {
-    "1d": 0.20,
-    "1h": 0.30,
-    "30m": 0.20,
-    "15m": 0.30,
+    "1d": 0.05,
+    "1h": 0.15,
+    "30m": 0.30,
+    "15m": 0.50,
 }
 
 
