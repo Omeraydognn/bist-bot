@@ -71,17 +71,9 @@ class TelegramNotifier:
     def notify_signal(self, result: dict) -> bool:
         """Orkestratorun analyze_ticker ciktisini mesaja cevirir."""
         aksiyon = result.get("aksiyon", "?")
-        if aksiyon == "BEKLE" and result.get("guven", 0) < self.min_confidence:
-            # BEKLE sinyalleri spam olmasin diye varsayilan olarak atlanir,
-            # ama firsat notu doluysa "kucuk firsat" mesaji atilir
-            firsat = result.get("firsat_notu", "")
-            if firsat and firsat != "Belirgin kucuk firsat da yok.":
-                fiyat_str = f" @ {result['fiyat']} TL" if result.get("fiyat") else ""
-                return self._send(
-                    f"👀 <b>{result['symbol']}</b> — izlemede{fiyat_str}\n"
-                    f"Küçük hareketler: {firsat}\n"
-                    f"Skor: {result.get('nihai_skor')}"
-                )
+        
+        # Sadece AL/SAT mesajlarini Telegram'a gonder, BEKLE ise sessiz kal
+        if aksiyon == "BEKLE":
             return False
 
         emoji = "🟢" if aksiyon == "AL" else ("🔴" if aksiyon == "SAT" else "⚪")

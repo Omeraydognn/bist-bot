@@ -55,7 +55,7 @@ class Orchestrator:
         # AI Beyin: NVIDIA NIM API uzerinden calisan ust karar motoru
         ai_cfg = self.config.ai
         self.ai_brain = AIBrain(
-            model=ai_cfg.get('model', 'nvidia/llama-3.1-nemotron-ultra-253b-v1'),
+            model=ai_cfg.get('model', 'meta/llama-3.1-70b-instruct'),
             temperature=ai_cfg.get('temperature', 0.1),
         )
         self.ai_fallback = ai_cfg.get('fallback_to_math', True)
@@ -191,7 +191,8 @@ class Orchestrator:
                 else:
                     print(f"  [AI ONAY] {ai_decision.action} | {ai_decision.reasoning}")
             elif self.ai_fallback:
-                result["ai_gerekce"] = "AI yanıt veremedi, matematik motor kararı korundu."
+                err = self.ai_brain.last_error or "Bilinmeyen hata."
+                result["ai_gerekce"] = f"AI yanıt veremedi ({err}), matematik motor kararı korundu."
                 print("  [AI] Fallback: matematik motor karari korundu.")
 
         # PAPER TRADING: sinyali sanal portfoye uygula

@@ -40,7 +40,7 @@ class AIBrain:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        model: str = "meta/llama-3.1-70b-instruct",
         temperature: float = 0.1,
         base_url: str = "https://integrate.api.nvidia.com/v1",
     ):
@@ -50,8 +50,10 @@ class AIBrain:
         self.base_url = base_url
         self.enabled = bool(self.api_key)
         self._client = None
+        self.last_error = ""
 
         if not self.enabled:
+            self.last_error = "NVIDIA_API_KEY bulunamadi."
             print("[AI Beyin] NVIDIA_API_KEY tanimli degil — AI devre disi, matematik motor tek basina karar verecek.")
 
     def _get_client(self):
@@ -64,6 +66,7 @@ class AIBrain:
                     api_key=self.api_key,
                 )
             except ImportError:
+                self.last_error = "openai kütüphanesi kurulu değil."
                 print("[AI Beyin] openai paketi kurulu degil. `pip install openai` calistir.")
                 self.enabled = False
                 return None
@@ -97,9 +100,11 @@ class AIBrain:
             )
 
             raw = response.choices[0].message.content.strip()
+            self.last_error = ""
             return self._parse_response(raw, math_action)
 
         except Exception as e:
+            self.last_error = str(e)
             print(f"[AI Beyin] API hatasi: {e}")
             return None
 

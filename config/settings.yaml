@@ -97,6 +97,6 @@ session:
 ai:
   enabled: true
   provider: "nvidia"                                      # nvidia, openai, anthropic
-  model: "nvidia/llama-3.1-nemotron-ultra-253b-v1"        # NVIDIA NIM ucretsiz modeli
+  model: "meta/llama-3.1-70b-instruct"                    # NVIDIA NIM ucretsiz modeli
   temperature: 0.1        # Dusuk = tutarli kararlar, yuksek = yaratici
   fallback_to_math: true  # AI cokerse matematik motora geri dus
