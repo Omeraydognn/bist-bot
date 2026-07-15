@@ -177,6 +177,17 @@ class Orchestrator:
             } if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else None,
         }
 
+        # AI'in KURAL 0 (piyasa bilinci) icin ihtiyac duydugu yapilandirilmis
+        # seans bilgisi - AI karar vermeden once bunu gormek ZORUNDA
+        s = mtf.session
+        result["piyasa_durumu"] = {
+            "acik_mi": s.is_open if s else None,
+            "faz": s.phase if s else "?",
+            "pozisyon_acilabilir_mi": s.can_open_position if s else None,
+            "kapanisa_dk": s.minutes_to_close if s else None,
+            "not": s.note if s else "Seans bilgisi alinamadi.",
+        }
+
         # =====================================================
         # AI BEYİN: Nihai karar burada verilir
         # Matematik motor "danışman", AI "başkomutan"

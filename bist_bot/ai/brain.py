@@ -87,6 +87,8 @@ class AIBrain:
 
         user_prompt = build_analysis_prompt(analysis_data)
         math_action = analysis_data.get("aksiyon", "BEKLE")
+        piyasa = analysis_data.get("piyasa_durumu", {})
+        market_open = piyasa.get("acik_mi")
 
         try:
             response = client.chat.completions.create(
@@ -101,14 +103,15 @@ class AIBrain:
 
             raw = response.choices[0].message.content.strip()
             self.last_error = ""
-            return self._parse_response(raw, math_action)
+            return self._parse_response(raw, math_action, market_open=market_open)
 
         except Exception as e:
             self.last_error = str(e)
             print(f"[AI Beyin] API hatasi: {e}")
             return None
 
-    def _parse_response(self, raw: str, math_action: str) -> AIDecision:
+    def _parse_response(self, raw: str, math_action: str,
+                        market_open: bool | None = None) -> AIDecision:
         """AI'in JSON cevabini parse eder. Bozuk formatta fallback uygular."""
         try:
             # JSON bloğunu bul (```json ... ``` veya düz JSON)
@@ -129,6 +132,20 @@ class AIBrain:
             reasoning = data.get("gerekce", "AI gerekce uretmedi.")
             vetoed = data.get("veto", False)
 
+            # KURAL 0 GÜVENLİK AĞI: piyasa kapalıyken AI hâlâ AL/SAT diyorsa,
+            # KURAL 0'ı fark edememiş demektir → kararı geçersiz say, logla.
+            # (Bunu fark edemeyen bir AI'ın işlem sinyaline güvenilmez.)
+            if market_open is False and action in ("AL", "SAT"):
+                print(f"[AI GÜVENLİK] AI piyasanın kapalı olduğunu fark edemedi "
+                      f"({action} dedi) — karar BEKLE'ye çevrildi. Ham yanıt: {raw[:150]}")
+                return AIDecision(
+                    action="BEKLE",
+                    confidence=0.0,
+                    reasoning=f"[Kural 0 Filtresi] Piyasa kapalı; AI'ın {action} kararı geçersiz sayıldı.",
+                    vetoed=True,
+                    raw_response=raw,
+                )
+
             # Ek güvenlik: AI saçmalarsa (güven çok düşük ama AL/SAT diyorsa)
             if action in ("AL", "SAT") and confidence < 0.4:
                 action = "BEKLE"
@@ -146,10 +163,13 @@ class AIBrain:
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             print(f"[AI Beyin] Yanit parse hatasi: {e}")
             print(f"[AI Beyin] Ham yanit: {raw[:200]}")
+            fallback = "BEKLE" if market_open is False else math_action
             return AIDecision(
-                action=math_action,  # Parse hatasinda matematik motora geri dus
+                action=fallback,  # Parse hatasinda matematik motora geri dus (kapali piyasada BEKLE)
                 confidence=0.5,
-                reasoning="AI yanıtı okunamadı, matematik motor kararı korundu.",
+                reasoning="AI yanıtı okunamadı, matematik motor kararı korundu."
+                          if market_open is not False else
+                          "AI yanıtı okunamadı ve piyasa kapalı — BEKLE.",
                 vetoed=False,
                 raw_response=raw,
             )

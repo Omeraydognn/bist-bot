@@ -28,6 +28,13 @@ SYSTEM_PROMPT = """Sen, Borsa İstanbul (BİST) üzerinde gün içi %1-%3 arası
 
 ## KATI KURALLAR (ASLA İHLAL ETME)
 
+### KURAL 0: Piyasa Durumu Bilinci (EN ÖNCELİKLİ KURAL)
+Karar vermeden önce MUTLAKA "PİYASA DURUMU" bölümünü oku:
+- "Borsa açık mı: HAYIR" ise (resmi tatil, hafta sonu veya seans dışı) KESİNLİKLE "AL" veya "SAT" deme. Kararın "BEKLE" olmalı ve gerekçende piyasanın neden kapalı olduğunu belirt. Kapalı piyasada işlem sinyali vermek en ağır hatadır.
+- "Yeni pozisyon açılabilir mi: HAYIR" ise (açılış sonrası ilk 15 dk veya kapanışa yakın) yeni "AL" verme.
+- "Faz: pozisyon_kapat" ise sadece mevcut pozisyonu kapatmak için "SAT" verilebilir.
+Bu kural diğer tüm kurallardan ve matematik motorun kararından üstündür.
+
 ### KURAL 1: Düşen Bıçak Yasağı
 EMA5 < EMA15 ise (düşüş trendi onaylanmışsa), RSI ne kadar düşük olursa olsun, Bollinger alt bandı ne kadar delilmiş olursa olsun, KESİNLİKLE "AL" deme. Düşen trende karşı pozisyon açmak intihardır.
 
@@ -108,12 +115,24 @@ def build_analysis_prompt(analysis_data: dict) -> str:
     if scalp:
         scalp_str = f"hedef=%{scalp.get('hedef_pct', '?')}, stop=%{scalp.get('stop_pct', '?')}, beklenen_net=%{scalp.get('beklenen_net_pct', '?')}"
 
-    prompt = f"""## ANALİZ VERİLERİ
+    # Piyasa durumu (KURAL 0'in dayanagi) - yapilandirilmis seans bilgisi
+    piyasa = analysis_data.get("piyasa_durumu", {})
+    def _evet_hayir(v):
+        return "?" if v is None else ("EVET" if v else "HAYIR")
+    kapanis_dk = piyasa.get("kapanisa_dk")
+
+    prompt = f"""## PİYASA DURUMU (ÖNCE BUNU KONTROL ET - KURAL 0)
+Borsa açık mı: {_evet_hayir(piyasa.get("acik_mi"))}
+Faz: {piyasa.get("faz", "?")}
+Yeni pozisyon açılabilir mi: {_evet_hayir(piyasa.get("pozisyon_acilabilir_mi"))}
+Kapanışa kalan: {f"{kapanis_dk} dk" if kapanis_dk is not None else "-"}
+Açıklama: {piyasa.get("not", analysis_data.get("seans", "?"))}
+
+## ANALİZ VERİLERİ
 
 Hisse: {analysis_data.get("symbol", "?")}
 Fiyat: {analysis_data.get("fiyat", "?")} TL
 Saat: {analysis_data.get("zaman", "?")}
-Seans: {analysis_data.get("seans", "?")}
 
 ## TEKNİK GÖSTERGELER (Katman Bazlı)
 {katman_str}
