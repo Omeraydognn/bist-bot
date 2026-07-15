@@ -208,6 +208,32 @@ class Orchestrator:
             } if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else None,
         }
 
+        # --- VERI TAZELIK BEKCISI: seans acikken son mum 30 dk'dan eskiyse
+        # veri akisi kopmus demektir -> bayat fiyatla sinyal URETILMEZ,
+        # kullaniciya bir kez uyari gider (30 dk tekrar filtresiyle).
+        data_fresh = True
+        if mtf.session and mtf.session.is_open:
+            newest = None
+            for tf_key in ("5m", "15m"):
+                rws = frames.get(tf_key)
+                if rws and rws[-1].get("date"):
+                    try:
+                        dt = datetime.strptime(str(rws[-1]["date"])[:19], "%Y-%m-%d %H:%M:%S")
+                        newest = dt if (newest is None or dt > newest) else newest
+                    except (ValueError, TypeError):
+                        continue
+            if newest is None or (datetime.now() - newest).total_seconds() > 1800:
+                data_fresh = False
+                result["veri_uyarisi"] = f"Fiyat verisi guncel degil (son mum: {newest or 'yok'})."
+                result["aksiyon"] = "BEKLE"
+                action = "BEKLE"
+                print(f"  [VERI] {result['veri_uyarisi']} Sinyal uretimi duraklatildi.")
+                if self._should_notify(ticker.symbol, "VERI_ESKI"):
+                    self.notifier.notify_error(
+                        f"{ticker.symbol}: fiyat verisi guncellenemiyor (son mum: {newest or 'yok'}). "
+                        f"Sinyaller duzelene kadar duraklatildi."
+                    )
+
         # AI'in KURAL 0 (piyasa bilinci) icin ihtiyac duydugu yapilandirilmis
         # seans bilgisi - AI karar vermeden once bunu gormek ZORUNDA
         s = mtf.session
@@ -223,7 +249,7 @@ class Orchestrator:
         # AI BEYİN: Nihai karar burada verilir
         # Matematik motor "danışman", AI "başkomutan"
         # =====================================================
-        if self.ai_brain.enabled:
+        if self.ai_brain.enabled and data_fresh:
             ai_decision = self.ai_brain.decide(result)
             if ai_decision is not None:
                 old_action = result["aksiyon"]
@@ -258,24 +284,26 @@ class Orchestrator:
 
         # KAR REALIZASYONU DONGUSU: 15m veriyle tepe-satis / dip-geri-alim
         # (sadece seans acikken; sanal hisse-adedi portfoyu, gercek emir yok)
-        if self.swing is not None and session_open and frames.get("15m"):
+        if self.swing is not None and session_open and data_fresh and frames.get("15m"):
             for msg in self.swing.step(ticker.symbol, frames["15m"]):
                 print(f"  {msg}")
-                self.notifier.notify_trade(msg)
+                self.notifier.notify_raw(msg)
 
-        # PAPER TRADING: sinyali sanal portfoye uygula (sadece seans acikken)
-        if self.paper is not None and session_open:
+        # PAPER TRADING: sinyali sanal portfoye uygula (sadece seans acikken).
+        # NOT: Kullanici islemleri KENDISI yapiyor - pozisyon kapanislari
+        # ona "SAT ZAMANI" sinyali olarak gider (defter dili degil).
+        if self.paper is not None and session_open and data_fresh:
             if last_close:
                 # Seans sonu zorunlu kapanis kontrolu
                 if mtf.session and mtf.session.should_close_positions:
                     for msg in self.paper.check_positions({ticker.symbol: last_close}, force_close_all=True):
                         print(f"  {msg}")
-                        self.notifier.notify_trade(msg)
+                        self.notifier.notify_exit_signal(msg)
                 else:
                     # Once acik pozisyonlarda stop/target kontrolu
                     for msg in self.paper.check_positions({ticker.symbol: last_close}):
                         print(f"  {msg}")
-                        self.notifier.notify_trade(msg)
+                        self.notifier.notify_exit_signal(msg)
                         if "stop-loss" in msg:
                             self._last_stop_out[ticker.symbol] = datetime.now()
                     # Stop sonrasi sogutma: 30 dk icinde ayni hissede yeni AL yok
@@ -299,9 +327,9 @@ class Orchestrator:
                             stop_pct=stop, target_pct=target,
                             reason=f"skor {final_score:+.2f}",
                         )
+                        # Telegram'a AYRICA gonderilmez: kullanici 🟢 AL sinyalini
+                        # zaten aldi; bu satir sadece sanal defter kaydidir.
                         print(f"  {trade['message']}")
-                        if trade["executed"]:
-                            self.notifier.notify_trade(trade["message"])
 
         # DB'ye kaydet
         self.storage.insert_signal({
@@ -319,13 +347,13 @@ class Orchestrator:
 
         # Telegram sinyal bildirimi: sadece borsa acikken ve tekrar filtresinden
         # geciyorsa (ayni aksiyon 30 dk icinde tekrar bildirilmez)
-        if session_open and action in ("AL", "SAT") and self._should_notify(ticker.symbol, action):
+        if session_open and data_fresh and action in ("AL", "SAT") and self._should_notify(ticker.symbol, action):
             self.notifier.notify_signal(result)
 
         # %1 HAREKET BILGI UYARISI: kullanicinin "her firsati goreyim" istegi.
         # Islem ACILMAZ (backtest: bu hareketi kovalamak her ayarda zarar etti),
         # ama kullanici hareketten haberdar edilir - karar kullanicinin.
-        if session_open and mtf.scalp_signal:
+        if session_open and data_fresh and mtf.scalp_signal:
             move = mtf.scalp_signal.move_info_pct
             move_trig = scalp_cfg.get("move_trigger_pct", 1.0)
             if move_trig and abs(move) >= move_trig:

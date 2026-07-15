@@ -114,6 +114,17 @@ class TelegramNotifier:
         return self._send(f"💼 {message}")
 
     # ------------------------------------------------------------
+    def notify_raw(self, message: str) -> bool:
+        """Hazir formatlanmis mesaji oldugu gibi gonderir (swing sinyalleri)."""
+        return self._send(message)
+
+    # ------------------------------------------------------------
+    def notify_exit_signal(self, message: str) -> bool:
+        """Pozisyon cikis ani = kullanici icin SAT zamani sinyali.
+        (Kullanici islemleri kendisi yapiyor; defter dili yerine sinyal dili.)"""
+        return self._send(f"🔴 <b>SAT ZAMANI</b>\n{message}")
+
+    # ------------------------------------------------------------
     def notify_daily_report(self, report: dict, equity: float, total_return_pct: float) -> bool:
         kz = report.get("gunluk_net_kz", 0)
         emoji = "📈" if kz >= 0 else "📉"

@@ -145,9 +145,10 @@ class SwingCycler:
                         (cash, price, datetime.now().isoformat(), symbol),
                     )
                     messages.append(
-                        f"🔔 KAR REALİZASYONU: {st['shares']:.2f} adet {symbol} @ {price:.2f} satıldı "
-                        f"(gün içi %{gain:+.1f}, z={z:.1f}). "
-                        f"Geri alım hedefi: {price * (1 - self.dip_pct / 100):.2f} altı."
+                        f"🔴 <b>SAT SİNYALİ — KÂR REALİZASYONU</b>\n"
+                        f"{symbol} @ {price:.2f} TL (gün içi %{gain:+.1f}, z={z:.1f})\n"
+                        f"Tepe işareti: yükseliş yorgun, geri çekilme bekleniyor.\n"
+                        f"🎯 Geri alım hedefi: {price * (1 - self.dip_pct / 100):.2f} altı"
                     )
 
             elif st["mode"] == "NAKIT" and st["sell_price"]:
@@ -173,15 +174,16 @@ class SwingCycler:
                     total_growth = (new_shares - st["start_shares"]) / st["start_shares"] * 100
                     if rebuy_type == "dip":
                         messages.append(
-                            f"✅ GERİ ALIM (dip): {new_shares:.2f} adet {symbol} @ {price:.2f} "
-                            f"(satış {sell_p:.2f} → %{(price - sell_p) / sell_p * 100:+.2f}). "
-                            f"Toplam hisse büyümesi: %{total_growth:+.2f}"
+                            f"🟢 <b>AL SİNYALİ — GERİ ALIM (dip)</b>\n"
+                            f"{symbol} @ {price:.2f} TL (satış {sell_p:.2f} → %{(price - sell_p) / sell_p * 100:+.2f})\n"
+                            f"Döngü tamamlandı. Toplam hisse büyümesi: %{total_growth:+.2f}"
                         )
                     else:
                         messages.append(
-                            f"⚠️ GERİ ALIM (kaçış koruması): {new_shares:.2f} adet {symbol} @ {price:.2f} "
-                            f"— fiyat satışın %{self.runaway_pct} üstüne çıktı, hisseyi kaybetmemek için "
-                            f"geri girildi. Toplam hisse büyümesi: %{total_growth:+.2f}"
+                            f"🟢 <b>AL SİNYALİ — GERİ ALIM (kaçış koruması)</b>\n"
+                            f"{symbol} @ {price:.2f} TL — fiyat satışın %{self.runaway_pct} üstüne çıktı, "
+                            f"hisseyi kaybetmemek için geri gir.\n"
+                            f"Toplam hisse büyümesi: %{total_growth:+.2f}"
                         )
 
         return messages
