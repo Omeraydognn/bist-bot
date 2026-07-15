@@ -108,21 +108,32 @@ def analyze(price_rows: list[dict]) -> dict:
     ema15_prev = ema15_series.iloc[-2] if len(df) >= 2 else np.nan
 
     sub_scores = {}
-    
-    # Dususte Veto Durumu (State)
+
+    # Trend durumu (State): osilatorler trende gore yorumlanir.
+    # Dusus trendinde "ucuz" gorunen alim sinyalleri veto edilir (dusen bicak);
+    # yukselis trendinde "pahali" gorunen satis sinyallari torpulenir - saglikli
+    # bir trendde RSI'nin 70 ustunde ve fiyatin ust bantta gezmesi NORMALDIR
+    # (band walking). Aksi halde motor her %1'lik yukselisi SAT diye cezalandirir.
     is_downtrend = ema5_last < ema15_last
+    is_uptrend = ema5_last > ema15_last
 
     # --- RSI
     if pd.isna(rsi):
         sub_scores["rsi"] = 0.0
     elif rsi < 30:
-        sub_scores["rsi"] = 0.0 if is_downtrend else 0.6  # VETO KURALI
+        sub_scores["rsi"] = 0.0 if is_downtrend else 0.6  # VETO KURALI (dusen bicak)
     elif rsi > 70:
-        sub_scores["rsi"] = -0.6
+        if is_uptrend:
+            # Trend icinde asiri alim ancak ASIRI uclarda (80+) negatif sayilir
+            sub_scores["rsi"] = -0.3 if rsi > 80 else 0.0
+        else:
+            sub_scores["rsi"] = -0.6
     else:
         sub_scores["rsi"] = float(np.interp(rsi, [30, 50, 70], [0.3, 0.0, -0.3]))
         if is_downtrend and sub_scores["rsi"] > 0:
             sub_scores["rsi"] = 0.0  # VETO KURALI
+        elif is_uptrend and sub_scores["rsi"] < 0:
+            sub_scores["rsi"] = 0.0  # trend yonunde momentum cezalandirilmaz
 
     # --- MACD
     if pd.isna(hist_last):
@@ -138,6 +149,8 @@ def analyze(price_rows: list[dict]) -> dict:
         b_score = float(np.interp(position, [0, 0.5, 1], [0.5, 0.0, -0.5]))
         if is_downtrend and b_score > 0:
             b_score = 0.0  # VETO KURALI
+        elif is_uptrend and b_score < 0:
+            b_score = 0.0  # ust bantta yurumek trend gucudur, ceza yok
         sub_scores["bollinger"] = b_score
 
     # --- EMA 5-15 Kesişimi

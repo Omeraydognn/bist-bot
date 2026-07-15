@@ -53,10 +53,11 @@ class MTFResult:
 def analyze_mtf(
     frames: dict[str, list[dict]],
     cost_model: CostModel | None = None,
-    min_net_edge_pct: float = 0.20,      # komisyonsuz oldugumuz icin esik dusuruldu
+    min_net_edge_pct: float = 0.15,      # komisyonsuz oldugumuz icin esik dusuruldu
     check_session: bool = True,
-    buy_threshold: float = 0.25,
-    sell_threshold: float = -0.25,
+    buy_threshold: float = 0.15,         # hassas mod: kucuk yukselis de firsat
+    sell_threshold: float = -0.15,
+    move_trigger_pct: float = 1.0,       # %1 hareket tetigi (scalp motoruna gecer)
 ) -> MTFResult:
     import numpy as np
     from datetime import datetime
@@ -125,7 +126,9 @@ def analyze_mtf(
     scalp = None
     trigger_frame = frames.get("5m") or frames.get("15m")
     if trigger_frame and len(trigger_frame) >= 25:
-        scalp = analyze_scalp(trigger_frame, cost_model=cost_model, min_net_edge_pct=min_net_edge_pct)
+        scalp = analyze_scalp(trigger_frame, cost_model=cost_model,
+                              min_net_edge_pct=min_net_edge_pct,
+                              move_trigger_pct=move_trigger_pct)
 
     # ---- TREND VETOSU: gunluk trend guclu sekilde tersse, scalp sinyali kisitla
     daily_score = per_tf.get("1d", {}).get("score")
@@ -140,13 +143,16 @@ def analyze_mtf(
         scalp_action = scalp.action if scalp else "BEKLE"
 
     # ---- Nihai karar mantigi
-    # Scalp tetigi + MTF uyumu birlikte degerlendirilir
-    if scalp_action == "AL" and combined >= 0:
+    # Scalp tetigi + MTF uyumu birlikte degerlendirilir.
+    # Kucuk tolerans (0.10): skor notr bolgede hafif ters olsa bile tetik
+    # gecerli kalir - aksi halde -0.01'lik yuvarlama %1'lik firsati oldurur.
+    # Belirgin celiskide (skor tetige >0.10 ters) tetik yine engellenir.
+    if scalp_action == "AL" and combined >= -0.10:
         action = "AL"
-        confidence = min(0.5 + combined * 0.5 + (scalp.confidence if scalp else 0) * 0.3, 0.95)
-    elif scalp_action == "SAT" and combined <= 0:
+        confidence = min(0.5 + max(combined, 0) * 0.5 + (scalp.confidence if scalp else 0) * 0.3, 0.95)
+    elif scalp_action == "SAT" and combined <= 0.10:
         action = "SAT"
-        confidence = min(0.5 + abs(combined) * 0.5 + (scalp.confidence if scalp else 0) * 0.3, 0.95)
+        confidence = min(0.5 + max(-combined, 0) * 0.5 + (scalp.confidence if scalp else 0) * 0.3, 0.95)
     elif combined >= buy_threshold:
         action = "AL"
         confidence = min(0.4 + combined * 0.5, 0.85)

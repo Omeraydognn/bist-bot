@@ -95,6 +95,12 @@ class PaperTrader:
     def _init(self, starting_cash: float):
         with self._connect() as conn:
             conn.executescript(PAPER_SCHEMA)
+            # Eski surumden kalan veritabanlarinda eksik kolonlari tamamla
+            # (CREATE TABLE IF NOT EXISTS mevcut tabloya kolon EKLEMEZ)
+            existing = {r["name"] for r in conn.execute("PRAGMA table_info(paper_positions)")}
+            for col, ddl in (("stop_price", "REAL"), ("target_pct", "REAL")):
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE paper_positions ADD COLUMN {col} {ddl}")
             row = conn.execute("SELECT * FROM paper_account WHERE id=1").fetchone()
             if row is None:
                 conn.execute(

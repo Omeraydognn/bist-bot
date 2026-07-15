@@ -88,8 +88,9 @@ def _recent_volatility_pct(close: pd.Series, window: int = 20) -> float:
 def analyze_scalp(
     price_rows: list[dict],
     cost_model: CostModel | None = None,
-    min_net_edge_pct: float = 0.30,   # maliyet sonrasi en az %0.30 net beklenti olmali
-    zscore_entry: float = 1.5,        # ortalamadan 1.5 std sapma = asiri hareket
+    min_net_edge_pct: float = 0.15,   # maliyet sonrasi en az %0.15 net beklenti olmali
+    zscore_entry: float = 1.3,        # ortalamadan 1.3 std sapma = asiri hareket
+    move_trigger_pct: float = 1.0,    # %1'lik yonlu hareket = firsat (kullanici stratejisi)
 ) -> ScalpSignal:
     """
     Ana giris noktasi. Gunluk veya gun-ici mum listesi alir.
@@ -122,6 +123,35 @@ def analyze_scalp(
         mom3 = float((close.iloc[-1] - close.iloc[-4]) / close.iloc[-4] * 100)
     else:
         mom3 = 0.0
+
+    # Son ~1 saatlik yonlu hareket (5m veride 12 mum, 15m veride 4 mum kapsar)
+    move_window = min(12, len(close) - 1)
+    move_pct = float((close.iloc[-1] - close.iloc[-1 - move_window])
+                     / close.iloc[-1 - move_window] * 100) if move_window > 0 else 0.0
+
+    # ---------------- STRATEJI 0: YUZDE HAREKET TETIGI ----------------
+    # Kullanici stratejisi: %1'lik yukselis alim, %1'lik dusus satis firsatidir.
+    # Hacim en azindan normal seviyedeyse (>=0.9x) hareketin devamina oynanir;
+    # hacimsiz kopmalar asagida mean-reversion'a birakilir (ters yonde firsat).
+    if abs(move_pct) >= move_trigger_pct and vol_ratio >= 0.9:
+        direction = "AL" if move_pct > 0 else "SAT"
+        # Devam beklentisi: hareketin ~%40'i kadar, tipik oynakligin altina dusme
+        expected_move = max(min(abs(move_pct) * 0.4, 2.0), vol_pct * 2)
+        expected_net = expected_move - cost
+        confidence = min(0.45 + min(abs(move_pct) - move_trigger_pct, 1.0) * 0.2
+                         + (0.15 if vol_ratio >= 1.3 else 0.0), 0.85)
+        if expected_net >= min_net_edge_pct:
+            return ScalpSignal(
+                action=direction, strategy="yuzde_hareket",
+                expected_move_pct=round(expected_move, 2),
+                expected_net_pct=round(expected_net, 2),
+                confidence=round(confidence, 2),
+                stop_loss_pct=round(max(vol_pct * 1.5, 0.8), 2),
+                take_profit_pct=round(expected_move, 2),
+                reason=f"Son {move_window} mumda %{move_pct:+.2f} yonlu hareket "
+                       f"(hacim {vol_ratio:.1f}x). %{move_trigger_pct} esigi asildi -> "
+                       f"{direction} firsati, beklenen devam net ~%{expected_net:.2f}.",
+            )
 
     # ---------------- STRATEJI 1: MEAN REVERSION ----------------
     if z20 <= -zscore_entry:
@@ -160,11 +190,11 @@ def analyze_scalp(
             )
 
     # ---------------- STRATEJI 2: MOMENTUM BURST ----------------
-    if abs(mom3) >= vol_pct * 2 and vol_ratio >= 1.5:
+    if abs(mom3) >= vol_pct * 1.5 and vol_ratio >= 1.2:
         direction = "AL" if mom3 > 0 else "SAT"
         expected_move = min(abs(mom3) * 0.5, 2.0)   # hareketin yarisi kadar devam varsayimi
         expected_net = expected_move - cost
-        confidence = min(0.4 + (vol_ratio - 1.5) * 0.2, 0.8)
+        confidence = min(0.4 + (vol_ratio - 1.2) * 0.2, 0.8)
         if expected_net >= min_net_edge_pct:
             return ScalpSignal(
                 action=direction, strategy="momentum_burst",
@@ -183,7 +213,8 @@ def analyze_scalp(
         confidence=0,
         stop_loss_pct=0, take_profit_pct=0,
         reason=f"Su an maliyeti (%{cost:.2f} gidis-donus) karsilayacak buyuklukte "
-               f"bir firsat yok. Z-score: {z20:.2f}, 3-mum momentum: %{mom3:.2f}, "
+               f"bir firsat yok. 1-saatlik hareket: %{move_pct:+.2f} (esik ±%{move_trigger_pct}), "
+               f"Z-score: {z20:.2f}, 3-mum momentum: %{mom3:.2f}, "
                f"tipik mum hareketi: %{vol_pct:.2f}. Islem yapmamak da bir karardir - "
                f"kucuk kenarli islemler maliyete yenilir.",
     )

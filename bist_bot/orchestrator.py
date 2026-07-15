@@ -105,7 +105,18 @@ class Orchestrator:
             frames = self.fetch_all_timeframes(ticker)
 
         # 1) Coklu zaman dilimi + scalp + seans
-        mtf: MTFResult = analyze_mtf(frames, cost_model=self.cost_model)
+        # Config'teki hassas esikler MTF motoruna da gecer (onceden sadece
+        # yedek yola uygulaniyordu, MTF kendi ici 0.25 kullaniyordu - duzeltildi)
+        thresholds = self.config.decision_thresholds
+        scalp_cfg = self.config.raw.get("scalp", {})
+        mtf: MTFResult = analyze_mtf(
+            frames,
+            cost_model=self.cost_model,
+            buy_threshold=thresholds.get("buy", 0.15),
+            sell_threshold=thresholds.get("sell", -0.15),
+            min_net_edge_pct=scalp_cfg.get("min_net_edge_pct", 0.15),
+            move_trigger_pct=scalp_cfg.get("move_trigger_pct", 1.0),
+        )
 
         # 2) Haber sentiment
         news_result = sentiment.analyze_news(news_items) if news_items else None
@@ -139,7 +150,6 @@ class Orchestrator:
         final_score = max(-1.0, min(1.0, mtf.combined_score + adjust))
 
         # Aksiyonu guncelle: duzeltme sinyali esigi gecirebilir/dusurebilir
-        thresholds = self.config.decision_thresholds
         if mtf.action in ("AL", "SAT"):
             action = mtf.action   # MTF tetigi ana karar (seans vetosu zaten iceride)
         elif final_score >= thresholds.get("buy", 0.3):
@@ -171,6 +181,7 @@ class Orchestrator:
             "seans": mtf.session.note if mtf.session else "-",
             "gerekce": mtf.reason,
             "scalp": {
+                "strateji": mtf.scalp_signal.strategy,
                 "hedef_pct": mtf.scalp_signal.take_profit_pct,
                 "stop_pct": mtf.scalp_signal.stop_loss_pct,
                 "beklenen_net_pct": mtf.scalp_signal.expected_net_pct,

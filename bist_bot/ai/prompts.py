@@ -56,25 +56,32 @@ Matematik motor "BEKLE" diyorsa ama sen çok güçlü bir fırsat görüyorsan (
 
 ## KARAR VERME ÇERÇEVESİ
 
-### KESİN AL Koşulları (HEPSİ birlikte sağlanmalı):
-1. EMA5 > EMA15 (yükseliş trendi)
-2. Fiyat >= VWAP (kurumsal destek var)
-3. RSI 30-65 arasında (ne aşırı satım ne aşırı alım)
-4. Hacim oranı >= 1.2 (ortalama üstü ilgi)
-5. MACD histogram pozitif veya pozitife dönüyor
-6. Matematik motor skoru > 0 (en azından nötrün üstünde)
+### FIRSAT MODU (kullanıcının stratejisi)
+Bu bot agresif bir fırsat avcısıdır: hacim destekli %1'lik bir yükseliş bile
+ALıM fırsatı, %1'lik bir düşüş SATıŞ fırsatıdır. Mükemmel kurulumu bekleyip
+fırsat kaçırmak da bir hatadır. Ancak KATI KURALLAR (0-5) her zaman üstündür:
+fırsat iştahı hiçbir katı kuralı ihlal etme sebebi olamaz.
 
-### KESİN SAT Koşulları (HERHANGİ BİRİ yeterli):
+### AL Koşulları (1 ve 2 ZORUNLU; 3-6'dan en az İKİSİ sağlanmalı):
+1. [ZORUNLU] EMA5 > EMA15 (yükseliş trendi — Kural 1)
+2. [ZORUNLU] Fiyat >= VWAP (kurumsal destek — Kural 2)
+3. RSI 25-70 arasında (aşırı alım bölgesinde değil)
+4. Hacim oranı >= 0.9 (en azından normal ilgi; >= 1.2 ise güvenini artır)
+5. MACD histogram pozitif veya pozitife dönüyor
+6. Matematik motor skoru > 0 veya scalp motoru "yuzde_hareket" tetiği vermiş
+
+### SAT Koşulları (HERHANGİ BİRİ yeterli):
 1. EMA5, EMA15'i aşağı kırıyor (Death Cross) → HEMEN SAT
 2. Fiyat VWAP'ın %1'den fazla altına düştü → SAT
 3. RSI > 75 VE hacim düşüyor → SAT (momentum tükeniyor)
-4. Matematik motor skoru < -0.2 → SAT
+4. Matematik motor skoru < -0.15 → SAT
+5. Son 1 saatte %1+ düşüş var ve toparlanma işareti yok → SAT
 
 ### BEKLE Koşulları:
-- Yukarıdaki AL veya SAT koşulları tam sağlanmıyorsa
-- Çelişkili sinyaller varsa (örn: EMA yukarı ama VWAP altında)
+- AL'ın zorunlu koşullarından biri (EMA trendi veya VWAP) sağlanmıyorsa
+- Ciddi çelişki varsa (örn: 5m güçlü yukarı ama 1h/1d sert aşağı)
 - Sabah 10:00-10:15 arasında ve trend netleşmediyse
-- Emin değilsen
+- Veriler eksik/bozuksa
 
 ## ÇIKTI FORMATI
 Cevabını SADECE aşağıdaki JSON formatında ver. Başka hiçbir şey yazma:
@@ -113,7 +120,8 @@ def build_analysis_prompt(analysis_data: dict) -> str:
     scalp = analysis_data.get("scalp")
     scalp_str = "Yok"
     if scalp:
-        scalp_str = f"hedef=%{scalp.get('hedef_pct', '?')}, stop=%{scalp.get('stop_pct', '?')}, beklenen_net=%{scalp.get('beklenen_net_pct', '?')}"
+        scalp_str = (f"strateji={scalp.get('strateji', '?')}, hedef=%{scalp.get('hedef_pct', '?')}, "
+                     f"stop=%{scalp.get('stop_pct', '?')}, beklenen_net=%{scalp.get('beklenen_net_pct', '?')}")
 
     # Piyasa durumu (KURAL 0'in dayanagi) - yapilandirilmis seans bilgisi
     piyasa = analysis_data.get("piyasa_durumu", {})

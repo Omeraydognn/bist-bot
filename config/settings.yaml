@@ -71,6 +71,13 @@ decision_thresholds:
   # arasi -> TUT
 
 # ---------------------------------------------------------
+# Scalp motoru hassasiyeti (firsat yakalama ayarlari)
+# ---------------------------------------------------------
+scalp:
+  move_trigger_pct: 1.0      # %1'lik yonlu hareket = firsat tetigi (AL yukseliste, SAT dususte)
+  min_net_edge_pct: 0.15     # maliyet dusuldukten sonra en az %0.15 net beklenti
+
+# ---------------------------------------------------------
 # Depolama
 # ---------------------------------------------------------
 storage:
