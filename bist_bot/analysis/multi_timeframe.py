@@ -98,6 +98,20 @@ def analyze_mtf(
         weighted_sum += res["score"] * weight
         weight_used += weight
 
+    # Bilgi katmanlari (agirliksiz): 1h ara teyit ve 1d ana trend.
+    # Skora dahil edilmez ama gunluk trend vetosu ve rapor icin kullanilir.
+    for info_tf in ("1h", "1d"):
+        if info_tf in per_tf:
+            continue
+        rows = frames.get(info_tf)
+        if rows and len(rows) >= 30:
+            res = technical.analyze(rows)
+            per_tf[info_tf] = {
+                "score": round(res["score"], 3),
+                "rsi": res["details"].get("rsi"),
+                "not": "bilgi katmani (skora dahil degil, trend filtresi)",
+            }
+
     if weight_used == 0:
         return MTFResult(
             action="BEKLE", confidence=0, combined_score=0,

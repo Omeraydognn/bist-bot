@@ -33,6 +33,10 @@ data_sources:
         lookback_days: 10
       - interval: "15m"
         lookback_days: 20
+      - interval: "1h"          # ara teyit katmani (skora dahil degil, filtre)
+        lookback_days: 60
+      - interval: "1d"          # ana trend katmani (gunluk trend vetosu icin sart)
+        lookback_days: 365
 
   news:
     provider: "kap"             # KAP - resmi ve en guvenilir kaynak

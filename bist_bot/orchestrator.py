@@ -51,6 +51,10 @@ class Orchestrator:
         else:
             self.paper = None
         self.notifier = TelegramNotifier()
+        # Sinyal tekrar filtresi: ayni hisse icin ayni aksiyon 30 dk icinde
+        # tekrar bildirilmez (Telegram spam'ini onler)
+        self._last_notified: dict[str, tuple[str, datetime]] = {}
+        self.notify_repeat_minutes = 30
 
         # AI Beyin: NVIDIA NIM API uzerinden calisan ust karar motoru
         ai_cfg = self.config.ai
@@ -147,7 +151,7 @@ class Orchestrator:
 
         # Guncel Fiyati (Son Kapanis) Al
         last_close = None
-        for tf_key in ("15m", "30m", "1h", "1d"):
+        for tf_key in ("5m", "15m", "30m", "1h", "1d"):
             rows = frames.get(tf_key)
             if rows:
                 last_close = rows[-1].get("close")
@@ -195,8 +199,23 @@ class Orchestrator:
                 result["ai_gerekce"] = f"AI yanıt veremedi ({err}), matematik motor kararı korundu."
                 print("  [AI] Fallback: matematik motor karari korundu.")
 
-        # PAPER TRADING: sinyali sanal portfoye uygula
-        if self.paper is not None:
+        # =====================================================
+        # MUTLAK SEANS VETOSU: hangi motor uretirse uretsin
+        # (skor esigi veya AI), borsa kapaliyken AL/SAT islenmez.
+        # AL ayrica sadece pozisyon acilabilir pencerede gecerlidir;
+        # SAT seans acikken her fazda serbesttir (pozisyon kapatma).
+        # =====================================================
+        session_open = bool(mtf.session and mtf.session.is_open)
+        if action in ("AL", "SAT"):
+            blocked = (not session_open) or (action == "AL" and not mtf.session.can_open_position)
+            if blocked:
+                result["ham_aksiyon"] = action
+                result["seans_vetosu"] = mtf.session.note if mtf.session else "Seans bilgisi yok."
+                action = "BEKLE"
+                result["aksiyon"] = "BEKLE"
+
+        # PAPER TRADING: sinyali sanal portfoye uygula (sadece seans acikken)
+        if self.paper is not None and session_open:
             if last_close:
                 # Seans sonu zorunlu kapanis kontrolu
                 if mtf.session and mtf.session.should_close_positions:
@@ -210,7 +229,6 @@ class Orchestrator:
                         self.notifier.notify_trade(msg)
                     # Sonra yeni sinyal uygula
                     if action in ("AL", "SAT"):
-                        scalp_info = result.get("scalp") if "result" in dir() else None
                         stop = mtf.scalp_signal.stop_loss_pct if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else self.config.risk.get("stop_loss_pct", 0.05) * 100
                         target = mtf.scalp_signal.take_profit_pct if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else self.config.risk.get("take_profit_pct", 0.10) * 100
                         trade = self.paper.process_signal(
@@ -236,12 +254,25 @@ class Orchestrator:
             "details": json.dumps(result, ensure_ascii=False, default=str),
         })
 
-        # Telegram sinyal bildirimi (Sadece borsa acikken veya cok onemli bir haber geldiyse)
-        if mtf.session and mtf.session.is_open:
+        # Telegram sinyal bildirimi: sadece borsa acikken ve tekrar filtresinden
+        # geciyorsa (ayni aksiyon 30 dk icinde tekrar bildirilmez)
+        if session_open and action in ("AL", "SAT") and self._should_notify(ticker.symbol, action):
             self.notifier.notify_signal(result)
         # Eger borsa kapaliyken "haber" bazli ayri bir bildirim mekanizmasi eklenecekse buraya eklenebilir.
 
         return result
+
+    # ------------------------------------------------------------
+    def _should_notify(self, symbol: str, action: str) -> bool:
+        """Ayni hisse icin ayni aksiyonu kisa araliklarla tekrar bildirme."""
+        last = self._last_notified.get(symbol)
+        now = datetime.now()
+        if last:
+            last_action, last_time = last
+            if last_action == action and (now - last_time).total_seconds() < self.notify_repeat_minutes * 60:
+                return False
+        self._last_notified[symbol] = (action, now)
+        return True
 
     # ------------------------------------------------------------
     def run_once(self) -> list[dict]:
@@ -268,21 +299,36 @@ class Orchestrator:
                     self.run_once()
                     time_module.sleep(interval_seconds)
                 else:
-                    # Seans kapaliyken de KAP haberlerini ve bilancolari kacirmamak 
-                    # icin saatte bir analiz yapilir (fakat AL/SAT islemi acilmaz).
-                    today = datetime.now().strftime("%Y-%m-%d")
+                    from bist_bot.market.session import next_market_open, is_market_holiday, now_istanbul
+
+                    now = now_istanbul()
+                    is_trading_day = now.weekday() < 5 and not is_market_holiday(now.date())
+
+                    # Gun sonu raporu sadece islem gunlerinde, seans kapandiktan sonra
+                    today = now.strftime("%Y-%m-%d")
                     if (self.paper is not None and daily_report_sent_for != today
-                            and datetime.now().hour >= 18 and datetime.now().weekday() < 5):
+                            and now.hour >= 18 and is_trading_day):
                         report = self.paper.daily_report(today)
                         if report["islem_sayisi"] > 0:
                             st = self.paper.status()
                             self.notifier.notify_daily_report(report, st.equity, st.total_return_pct)
                         daily_report_sent_for = today
-                    
-                    print(f"[{datetime.now():%H:%M}] {state.note} Haber/bilanco guncellemesi yapiliyor...")
-                    self.run_once() # Haberleri/verileri guncelle (session kapali oldugu icin islem acilmaz)
-                    print(f"[{datetime.now():%H:%M}] Uyku moduna gecildi, 60 dakika sonra tekrar uyanacak.")
-                    time_module.sleep(3600) # Seans kapaliyken saatte 1 uyanir
+
+                    if is_trading_day and 8 <= now.hour < 19:
+                        # Islem gunu, seans oncesi/sonrasi: veri ve haberleri tazele
+                        # (seans vetosu nedeniyle islem acilmaz, bildirim gitmez)
+                        print(f"[{now:%H:%M}] {state.note} Veri guncellemesi yapiliyor...")
+                        self.run_once()
+                        sleep_s = 3600
+                    else:
+                        # Tatil / hafta sonu / gece: bir sonraki acilisa kadar uyu
+                        # (en fazla 1 saatlik dilimlerle, boylece Ctrl+C ve
+                        # takvim degisikligi hizli fark edilir)
+                        wake = next_market_open(now)
+                        sleep_s = min(3600, max(60, (wake - now).total_seconds()))
+                        print(f"[{now:%H:%M}] {state.note} Sonraki acilis: {wake:%Y-%m-%d %H:%M}.")
+                    print(f"[{now:%H:%M}] Uyku moduna gecildi ({int(sleep_s // 60)} dk).")
+                    time_module.sleep(sleep_s)
             except KeyboardInterrupt:
                 print("Bot durduruldu (Ctrl+C).")
                 break
