@@ -52,6 +52,21 @@ class Orchestrator:
         else:
             self.paper = None
         self.notifier = TelegramNotifier()
+
+        # KAR REALIZASYONU DONGUSU (yuksekten sat -> dusukten geri al ->
+        # hisse adedini buyut). Kurallar 15m ASELS backtest'iyle secildi.
+        swing_cfg = self.config.raw.get("swing", {})
+        if swing_cfg.get("enabled", True):
+            from bist_bot.trading.swing_cycler import SwingCycler
+            self.swing = SwingCycler(
+                self.config.db_path.parent / "swing_portfolio.db",
+                day_gain_pct=swing_cfg.get("day_gain_pct", 2.0),
+                z_sell=swing_cfg.get("z_sell", 1.5),
+                dip_pct=swing_cfg.get("dip_pct", 0.5),
+                runaway_pct=swing_cfg.get("runaway_pct", 1.5),
+            )
+        else:
+            self.swing = None
         # Sinyal tekrar filtresi: ayni hisse icin ayni aksiyon 30 dk icinde
         # tekrar bildirilmez (Telegram spam'ini onler)
         self._last_notified: dict[str, tuple[str, datetime]] = {}
@@ -240,6 +255,13 @@ class Orchestrator:
                 result["seans_vetosu"] = mtf.session.note if mtf.session else "Seans bilgisi yok."
                 action = "BEKLE"
                 result["aksiyon"] = "BEKLE"
+
+        # KAR REALIZASYONU DONGUSU: 15m veriyle tepe-satis / dip-geri-alim
+        # (sadece seans acikken; sanal hisse-adedi portfoyu, gercek emir yok)
+        if self.swing is not None and session_open and frames.get("15m"):
+            for msg in self.swing.step(ticker.symbol, frames["15m"]):
+                print(f"  {msg}")
+                self.notifier.notify_trade(msg)
 
         # PAPER TRADING: sinyali sanal portfoye uygula (sadece seans acikken)
         if self.paper is not None and session_open:

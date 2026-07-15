@@ -83,6 +83,19 @@ scalp:
   min_net_edge_pct: 0.40     # maliyet sonrasi en az %0.40 net beklenti (backtest karari)
 
 # ---------------------------------------------------------
+# Kar Realizasyonu Dongusu (yuksekten sat -> dusukten geri al)
+# Hedef: fiyat kazanci degil HISSE ADEDI buyumesi.
+# Kurallar 50 gunluk gercek ASELS 15m backtest'iyle secildi:
+# +%8.6 hisse artisi; iki yari ve 4 ceyregin 4'unde de pozitif.
+# ---------------------------------------------------------
+swing:
+  enabled: true
+  day_gain_pct: 2.0     # gun ici +%2 kazanc = tepe adayi (SAT kosulu 1)
+  z_sell: 1.5           # veya z-score >= 1.5 asiri alim (SAT kosulu 2)
+  dip_pct: 0.5          # satis fiyatinin %0.5 altina inince GERI AL
+  runaway_pct: 1.5      # fiyat %1.5 ustune kacarsa hisseyi kaybetmemek icin geri al
+
+# ---------------------------------------------------------
 # Depolama
 # ---------------------------------------------------------
 storage:

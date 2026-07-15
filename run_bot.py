@@ -53,6 +53,13 @@ def main():
             print(f"  {p['symbol']}: {p['shares']:.2f} adet @ {p['entry_price']} (acik K/Z %{p.get('acik_kz_pct', '?')})")
         rapor = orch.paper.daily_report()
         print(f"Bugun: {rapor['islem_sayisi']} islem, net K/Z {rapor['gunluk_net_kz']} TL")
+        if orch.swing is not None:
+            for t in orch.config.tickers:
+                sw = orch.swing.status(t.symbol)
+                if sw:
+                    print(f"Kar realizasyonu ({t.symbol}): mod={sw['mod']} | hisse={sw['hisse']} "
+                          f"(başlangıç {sw['baslangic_hisse']}, büyüme %{sw['hisse_buyume_pct']}) "
+                          f"| döngü: {sw['dongu_sayisi']}")
         return
 
     if args.once:
