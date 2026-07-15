@@ -47,6 +47,7 @@ class Orchestrator:
                 starting_cash=100_000.0,
                 cost_model=self.cost_model,
                 max_position_pct=risk.get("max_position_pct", 1.0) if len(self.config.tickers) > 1 else 1.0,
+                max_holding_min=risk.get("max_holding_min", 60),
             )
         else:
             self.paper = None
@@ -55,6 +56,10 @@ class Orchestrator:
         # tekrar bildirilmez (Telegram spam'ini onler)
         self._last_notified: dict[str, tuple[str, datetime]] = {}
         self.notify_repeat_minutes = 30
+        # Stop sonrasi sogutma: stop yiyen hissede 30 dk yeni pozisyon acilmaz
+        # (backtest'in kazanan konfigurasyonunun parcasi - whipsaw korumasi)
+        self._last_stop_out: dict[str, datetime] = {}
+        self.stop_cooldown_minutes = 30
 
         # AI Beyin: NVIDIA NIM API uzerinden calisan ust karar motoru
         ai_cfg = self.config.ai
@@ -114,7 +119,7 @@ class Orchestrator:
             cost_model=self.cost_model,
             buy_threshold=thresholds.get("buy", 0.15),
             sell_threshold=thresholds.get("sell", -0.15),
-            min_net_edge_pct=scalp_cfg.get("min_net_edge_pct", 0.15),
+            min_net_edge_pct=scalp_cfg.get("min_net_edge_pct", 0.40),
             move_trigger_pct=scalp_cfg.get("move_trigger_pct", 1.0),
         )
 
@@ -249,8 +254,22 @@ class Orchestrator:
                     for msg in self.paper.check_positions({ticker.symbol: last_close}):
                         print(f"  {msg}")
                         self.notifier.notify_trade(msg)
-                    # Sonra yeni sinyal uygula
-                    if action in ("AL", "SAT"):
+                        if "stop-loss" in msg:
+                            self._last_stop_out[ticker.symbol] = datetime.now()
+                    # Stop sonrasi sogutma: 30 dk icinde ayni hissede yeni AL yok
+                    stop_dt = self._last_stop_out.get(ticker.symbol)
+                    in_cooldown = (stop_dt is not None and
+                                   (datetime.now() - stop_dt).total_seconds() < self.stop_cooldown_minutes * 60)
+                    if action == "AL" and in_cooldown:
+                        print(f"  [SOGUTMA] {ticker.symbol} az once stop yedi - "
+                              f"{self.stop_cooldown_minutes} dk yeni giris yok.")
+                    # Sonra yeni sinyal uygula.
+                    # NOT (backtest 2026-07-15): sadece AL sinyali islem acar.
+                    # SAT sinyaliyle pozisyon kapatmak test getirisini +%2.3'ten
+                    # +%0.2'ye dusurdu (kazanan pozisyondan erken cikiyor) ->
+                    # cikislari izleyen stop + hedef + zaman stopu yonetir.
+                    # SAT sinyali Telegram bildirimi olarak kullaniciya gider.
+                    elif action == "AL":
                         stop = mtf.scalp_signal.stop_loss_pct if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else self.config.risk.get("stop_loss_pct", 0.05) * 100
                         target = mtf.scalp_signal.take_profit_pct if mtf.scalp_signal and mtf.scalp_signal.action != "BEKLE" else self.config.risk.get("take_profit_pct", 0.10) * 100
                         trade = self.paper.process_signal(
@@ -280,20 +299,30 @@ class Orchestrator:
         # geciyorsa (ayni aksiyon 30 dk icinde tekrar bildirilmez)
         if session_open and action in ("AL", "SAT") and self._should_notify(ticker.symbol, action):
             self.notifier.notify_signal(result)
+
+        # %1 HAREKET BILGI UYARISI: kullanicinin "her firsati goreyim" istegi.
+        # Islem ACILMAZ (backtest: bu hareketi kovalamak her ayarda zarar etti),
+        # ama kullanici hareketten haberdar edilir - karar kullanicinin.
+        if session_open and mtf.scalp_signal:
+            move = mtf.scalp_signal.move_info_pct
+            move_trig = scalp_cfg.get("move_trigger_pct", 1.0)
+            if move_trig and abs(move) >= move_trig:
+                yon = "YUKSELIS" if move > 0 else "DUSUS"
+                if self._should_notify(ticker.symbol, f"HAREKET_{yon}"):
+                    self.notifier.notify_move_alert(ticker.symbol, move, result.get("fiyat"))
         # Eger borsa kapaliyken "haber" bazli ayri bir bildirim mekanizmasi eklenecekse buraya eklenebilir.
 
         return result
 
     # ------------------------------------------------------------
     def _should_notify(self, symbol: str, action: str) -> bool:
-        """Ayni hisse icin ayni aksiyonu kisa araliklarla tekrar bildirme."""
-        last = self._last_notified.get(symbol)
+        """Ayni hisse icin ayni tip bildirimi kisa araliklarla tekrarlama."""
+        key = f"{symbol}:{action}"
         now = datetime.now()
-        if last:
-            last_action, last_time = last
-            if last_action == action and (now - last_time).total_seconds() < self.notify_repeat_minutes * 60:
-                return False
-        self._last_notified[symbol] = (action, now)
+        last_time = self._last_notified.get(key)
+        if last_time and (now - last_time[1]).total_seconds() < self.notify_repeat_minutes * 60:
+            return False
+        self._last_notified[key] = (action, now)
         return True
 
     # ------------------------------------------------------------

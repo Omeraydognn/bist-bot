@@ -53,7 +53,7 @@ class MTFResult:
 def analyze_mtf(
     frames: dict[str, list[dict]],
     cost_model: CostModel | None = None,
-    min_net_edge_pct: float = 0.15,      # komisyonsuz oldugumuz icin esik dusuruldu
+    min_net_edge_pct: float = 0.40,      # backtest karari: alti maliyete yenildi
     check_session: bool = True,
     buy_threshold: float = 0.15,         # hassas mod: kucuk yukselis de firsat
     sell_threshold: float = -0.15,
@@ -143,11 +143,12 @@ def analyze_mtf(
         scalp_action = scalp.action if scalp else "BEKLE"
 
     # ---- Nihai karar mantigi
-    # Scalp tetigi + MTF uyumu birlikte degerlendirilir.
-    # Kucuk tolerans (0.10): skor notr bolgede hafif ters olsa bile tetik
-    # gecerli kalir - aksi halde -0.01'lik yuvarlama %1'lik firsati oldurur.
-    # Belirgin celiskide (skor tetige >0.10 ters) tetik yine engellenir.
-    if scalp_action == "AL" and combined >= -0.10:
+    # AL tetigi: scalp motoru dogrudan karar verir (backtest 2026-07-15 karari).
+    # Ortalamaya-donus alimi TANIM GEREGI teknik skorlarin negatif oldugu anda
+    # gelir (fiyat yeni dustu) - birlesik skor kapisi bu girisleri bogar.
+    # Kazanan backtest konfigurasyonunda bu kapi yoktu; koruma olarak sadece
+    # gunluk trend vetosu (yukarida) ve seans vetosu (asagida) uygulanir.
+    if scalp_action == "AL":
         action = "AL"
         confidence = min(0.5 + max(combined, 0) * 0.5 + (scalp.confidence if scalp else 0) * 0.3, 0.95)
     elif scalp_action == "SAT" and combined <= 0.10:

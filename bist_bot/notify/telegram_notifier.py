@@ -97,6 +97,18 @@ class TelegramNotifier:
         return self._send("\n".join(lines))
 
     # ------------------------------------------------------------
+    def notify_move_alert(self, symbol: str, move_pct: float, price: float | None) -> bool:
+        """%1+ yonlu hareket bilgi uyarisi (islem sinyali DEGIL)."""
+        emoji = "📈" if move_pct > 0 else "📉"
+        fiyat_str = f" @ {price} TL" if price else ""
+        return self._send(
+            f"{emoji} <b>{symbol} HAREKET UYARISI</b>{fiyat_str}\n"
+            f"Son 1 saatte %{move_pct:+.2f} hareket.\n"
+            f"<i>Bilgi amaçlıdır - bot bu harekete otomatik işlem açmaz "
+            f"(geçmiş test: hareket kovalamak zarar ettirdi).</i>"
+        )
+
+    # ------------------------------------------------------------
     def notify_trade(self, message: str) -> bool:
         """Paper/gercek islem gerceklestiginde."""
         return self._send(f"💼 {message}")

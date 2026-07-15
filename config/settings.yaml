@@ -71,11 +71,16 @@ decision_thresholds:
   # arasi -> TUT
 
 # ---------------------------------------------------------
-# Scalp motoru hassasiyeti (firsat yakalama ayarlari)
+# Scalp motoru hassasiyeti
+# DEGERLER 50 GUNLUK GERCEK ASELS 5m BACKTEST'IYLE SECILDI (2026-07-15):
+#   - %1 hareketi KOVALAMAK her ayarda zarar etti (-%1 ile -%32 arasi)
+#   - kazanan profil: ortalamaya-donus girisi + %0.40 net kenar +
+#     son mum teyidi + 45 dk zaman stopu + stop sonrasi 30 dk sogutma
+#     -> -%18 dusen hissede +%1 getiri, %61-66 kazanma orani
 # ---------------------------------------------------------
 scalp:
-  move_trigger_pct: 1.0      # %1'lik yonlu hareket = firsat tetigi (AL yukseliste, SAT dususte)
-  min_net_edge_pct: 0.15     # maliyet dusuldukten sonra en az %0.15 net beklenti
+  move_trigger_pct: 1.0      # %1 hareket = TELEGRAM BILGI UYARISI (islem acilmaz)
+  min_net_edge_pct: 0.40     # maliyet sonrasi en az %0.40 net beklenti (backtest karari)
 
 # ---------------------------------------------------------
 # Depolama
@@ -91,6 +96,7 @@ risk:
   max_position_pct: 0.20     # portfoyun en fazla %20'si tek hissede
   take_profit_pct: 0.04      # Esnek Hedef: %4 kâr beklentisi (Momentum kırılırsa daha erken SAT verebilir)
   stop_loss_pct: 0.02        # Koruma: %2 terste kalırsa ana parayı korumak için zararı kes
+  max_holding_min: 60        # ZAMAN STOPU: hedefe ulasamayan scalp pozisyonu 60 dk'da kapatilir
 
 # ---------------------------------------------------------
 # Seans (BIST 10:00 - 18:00) davranisi

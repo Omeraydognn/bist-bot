@@ -71,15 +71,21 @@ class PortfolioStatus:
 
 class PaperTrader:
     def __init__(self, db_path: Path | str, starting_cash: float = 100_000.0,
-                 cost_model: CostModel | None = None, max_position_pct: float = 1.0):
+                 cost_model: CostModel | None = None, max_position_pct: float = 1.0,
+                 max_holding_min: int | None = 60):
         """
         max_position_pct: tek pozisyona ayrilabilecek portfoy orani
         (tek hisseyle calisirken 1.0, coklu hissede config'ten dusurulur).
+        max_holding_min: ZAMAN STOPU - pozisyon bu sure icinde hedefe
+        ulasamadiysa kapatilir. Backtest (ASELS 50 gun, 5m) kanit: scalp
+        pozisyonunu bekletmek getiriyi dusuruyor; 40-60 dk sinirlamak
+        getiriyi -%1'den +%1'e cevirdi. None = kapali.
         """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.cost_model = cost_model or CostModel()
         self.max_position_pct = max_position_pct
+        self.max_holding_min = max_holding_min
         self._init(starting_cash)
 
     @contextmanager
@@ -212,6 +218,19 @@ class PaperTrader:
                 if new_stop and (current_stop is None or new_stop > current_stop):
                     conn.execute("UPDATE paper_positions SET stop_price=? WHERE symbol=?", (new_stop, pos["symbol"]))
                     current_stop = new_stop
+
+                # ZAMAN STOPU: hedefe ulasamayan scalp pozisyonu bekletilmez
+                if self.max_holding_min:
+                    try:
+                        entry_dt = datetime.fromisoformat(pos["entry_time"])
+                        held_min = (datetime.now() - entry_dt).total_seconds() / 60
+                    except (ValueError, TypeError):
+                        held_min = 0
+                    if held_min >= self.max_holding_min:
+                        r = self._close_position(conn, pos, price,
+                                                 f"zaman stopu ({self.max_holding_min} dk doldu)")
+                        messages.append(r["message"])
+                        continue
 
                 if current_stop and price <= current_stop:
                     # Stop emri tetik SEVIYESINDEN gerceklesir

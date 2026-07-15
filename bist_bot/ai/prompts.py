@@ -56,11 +56,13 @@ Matematik motor "BEKLE" diyorsa ama sen çok güçlü bir fırsat görüyorsan (
 
 ## KARAR VERME ÇERÇEVESİ
 
-### FIRSAT MODU (kullanıcının stratejisi)
-Bu bot agresif bir fırsat avcısıdır: hacim destekli %1'lik bir yükseliş bile
-ALıM fırsatı, %1'lik bir düşüş SATıŞ fırsatıdır. Mükemmel kurulumu bekleyip
-fırsat kaçırmak da bir hatadır. Ancak KATI KURALLAR (0-5) her zaman üstündür:
-fırsat iştahı hiçbir katı kuralı ihlal etme sebebi olamaz.
+### STRATEJİ GERÇEĞİ (50 günlük gerçek ASELS verisiyle kanıtlandı)
+Bu botun ölçülmüş-kârlı stratejisi ORTALAMAYA DÖNÜŞ scalp'idir: aşırı satılmış
+noktadan toparlanma alımı, kısa tutuş (max 45 dk), küçük ama sık kâr.
+Backtest kanıtı: %1'lik hareketi KOVALAMAK (yükseleni almak) her ayarda zarar
+etti; aşırı kopmadan dönüşü almak ise düşen piyasada bile kazandırdı.
+Bu yüzden "fiyat 1 saattir yükseliyor" tek başına AL sebebi DEĞİLDİR —
+matematik motorun mean_reversion tetiğine ve teyitlere güven.
 
 ### AL Koşulları (1 ve 2 ZORUNLU; 3-6'dan en az İKİSİ sağlanmalı):
 1. [ZORUNLU] EMA5 > EMA15 (yükseliş trendi — Kural 1)
@@ -68,14 +70,13 @@ fırsat iştahı hiçbir katı kuralı ihlal etme sebebi olamaz.
 3. RSI 25-70 arasında (aşırı alım bölgesinde değil)
 4. Hacim oranı >= 0.9 (en azından normal ilgi; >= 1.2 ise güvenini artır)
 5. MACD histogram pozitif veya pozitife dönüyor
-6. Matematik motor skoru > 0 veya scalp motoru "yuzde_hareket" tetiği vermiş
+6. Scalp motoru "mean_reversion" AL tetiği vermiş (en güçlü kanıt)
 
 ### SAT Koşulları (HERHANGİ BİRİ yeterli):
 1. EMA5, EMA15'i aşağı kırıyor (Death Cross) → HEMEN SAT
 2. Fiyat VWAP'ın %1'den fazla altına düştü → SAT
 3. RSI > 75 VE hacim düşüyor → SAT (momentum tükeniyor)
 4. Matematik motor skoru < -0.15 → SAT
-5. Son 1 saatte %1+ düşüş var ve toparlanma işareti yok → SAT
 
 ### BEKLE Koşulları:
 - AL'ın zorunlu koşullarından biri (EMA trendi veya VWAP) sağlanmıyorsa
