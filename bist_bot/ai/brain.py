@@ -110,6 +110,49 @@ class AIBrain:
             print(f"[AI Beyin] API hatasi: {e}")
             return None
 
+    # ------------------------------------------------------------
+    CHAT_SYSTEM_PROMPT = (
+        "Sen BIST AI Beyin'sin — Borsa İstanbul'da ASELS hissesini izleyen bir "
+        "sinyal botunun sohbet arayüzüsün. Kullanıcı botun sahibi; işlemleri "
+        "kendisi yapıyor, sen sadece bilgi ve gerekçe veriyorsun.\n"
+        "Kurallar:\n"
+        "- SADECE Türkçe, samimi ama net cevap ver. Kısa tut (en fazla 6-7 cümle).\n"
+        "- Sana verilen GÜNCEL DURUM bloğundaki verilere dayan; uydurma sayı verme. "
+        "Bilmediğin şeyi 'bu veriye sahip değilim' diye söyle.\n"
+        "- Sinyallerin mantığını açıklayabilirsin: bot aşırı satımdan toparlanmayı "
+        "alır (mean reversion), tepe yorulunca kâr realizasyonu satışı önerir, "
+        "%1+ hareketlerde bilgi uyarısı atar; çıkışları izleyen stop/hedef/60 dk "
+        "zaman stopu yönetir.\n"
+        "- Kesin gelecek tahmini verme; olasılık ve gerekçe dili kullan. "
+        "Nihai alım-satım kararının kullanıcıya ait olduğunu gerektiğinde hatırlat.\n"
+        "- HTML kullanma, düz metin yaz."
+    )
+
+    def chat(self, question: str, context: str) -> str | None:
+        """Kullanicinin Telegram sorusuna duruma dayali serbest cevap uretir.
+        Hata durumunda None doner (cagiran taraf durum ozetine geri duser)."""
+        if not self.enabled:
+            return None
+        client = self._get_client()
+        if client is None:
+            return None
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.CHAT_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"## GÜNCEL DURUM\n{context}\n\n## SORU\n{question}"},
+                ],
+                temperature=0.3,
+                max_tokens=400,
+            )
+            self.last_error = ""
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            self.last_error = str(e)
+            print(f"[AI Beyin] Sohbet hatasi: {e}")
+            return None
+
     def _parse_response(self, raw: str, math_action: str,
                         market_open: bool | None = None) -> AIDecision:
         """AI'in JSON cevabini parse eder. Bozuk formatta fallback uygular."""

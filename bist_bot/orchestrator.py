@@ -75,6 +75,8 @@ class Orchestrator:
         # (backtest'in kazanan konfigurasyonunun parcasi - whipsaw korumasi)
         self._last_stop_out: dict[str, datetime] = {}
         self.stop_cooldown_minutes = 30
+        # Telegram sohbeti icin son analiz sonuclari (sembol -> result)
+        self.last_results: dict[str, dict] = {}
 
         # AI Beyin: NVIDIA NIM API uzerinden calisan ust karar motoru
         ai_cfg = self.config.ai
@@ -345,6 +347,9 @@ class Orchestrator:
             "details": json.dumps(result, ensure_ascii=False, default=str),
         })
 
+        # Sohbet arayuzu icin son durumu sakla
+        self.last_results[ticker.symbol] = result
+
         # Telegram sinyal bildirimi: sadece borsa acikken ve tekrar filtresinden
         # geciyorsa (ayni aksiyon 30 dk icinde tekrar bildirilmez)
         if session_open and data_fresh and action in ("AL", "SAT") and self._should_notify(ticker.symbol, action):
@@ -386,12 +391,56 @@ class Orchestrator:
             self._print_result(res)
         return results
 
+    def chat_context(self) -> str:
+        """Telegram sohbeti icin botun guncel durum ozeti (AI'a baglam olarak gider)."""
+        from bist_bot.market.session import get_session_state
+        lines = []
+        st = get_session_state()
+        lines.append(f"Saat: {datetime.now():%Y-%m-%d %H:%M} | Seans: "
+                     f"{'ACIK (' + st.phase + ')' if st.is_open else 'KAPALI'} — {st.note}")
+        for sym, res in self.last_results.items():
+            lines.append(
+                f"{sym}: fiyat {res.get('fiyat')} TL | son karar: {res.get('aksiyon')} "
+                f"| skor {res.get('nihai_skor')} | güven {res.get('guven')} "
+                f"| analiz zamanı {res.get('zaman')}"
+            )
+            if res.get("gerekce"):
+                lines.append(f"  gerekçe: {res['gerekce'][:250]}")
+            if res.get("ai_gerekce"):
+                lines.append(f"  AI görüşü: {res['ai_gerekce'][:200]}")
+            if res.get("veri_uyarisi"):
+                lines.append(f"  UYARI: {res['veri_uyarisi']}")
+        if not self.last_results:
+            lines.append("Henüz analiz yapılmadı (bot yeni başladı, ilk tur bekleniyor).")
+        if self.paper is not None:
+            try:
+                ps = self.paper.status()
+                lines.append(f"Paper portföy: {ps.equity} TL (getiri %{ps.total_return_pct}) "
+                             f"| açık pozisyon: {ps.open_position_count}")
+            except Exception:
+                pass
+        if self.swing is not None:
+            for t in self.config.tickers:
+                sw = self.swing.status(t.symbol)
+                if sw:
+                    lines.append(f"Kâr realizasyonu ({t.symbol}): mod {sw['mod']} "
+                                 f"| hisse büyümesi %{sw['hisse_buyume_pct']} "
+                                 f"| döngü {sw['dongu_sayisi']}"
+                                 + (f" | geri alım bekleniyor (satış {sw['bekleyen_satis_fiyati']})"
+                                    if sw['mod'] == 'NAKIT' else ""))
+        return "\n".join(lines)
+
     def run_loop(self, interval_seconds: int = 300):
         """
         Canli dongu: seans acikken her `interval_seconds`'ta bir tam analiz.
         Seans kapaliyken bir sonraki acilisi bekler.
         """
         print("Bot canli moda gecti. Ctrl+C ile durdurabilirsin.")
+
+        # Telegram sohbeti: kullanici bota yazinca AI duruma gore cevap verir
+        from bist_bot.notify.telegram_chat import TelegramChat
+        self.chat = TelegramChat(self.ai_brain, self.chat_context)
+        self.chat.start()
         daily_report_sent_for = None
         while True:
             try:
