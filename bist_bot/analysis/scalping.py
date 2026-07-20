@@ -213,3 +213,74 @@ def analyze_scalp(
                f"tipik mum hareketi: %{vol_pct:.2f}. Islem yapmamak da bir karardir - "
                f"kucuk kenarli islemler maliyete yenilir.",
     )
+
+
+def analyze_quant_reversal(df_1m: pd.DataFrame) -> dict:
+    """
+    1-dakikalik (veya daha kisa) mumlari alip VWAP, EMA20 ve Hacim analizini yapar.
+    Amac: Fiyattaki dususun bir Pullback (nefes alma) mi yoksa Reversal (cokus) mu
+    oldugunu anlamak.
+    """
+    if df_1m is None or df_1m.empty or len(df_1m) < 20:
+        return {"action": "BEKLE", "reason": "Yetersiz 1m verisi"}
+
+    close = df_1m["Close"]
+    volume = df_1m["Volume"]
+    high = df_1m["High"]
+    low = df_1m["Low"]
+
+    # Typical Price (TP)
+    tp = (high + low + close) / 3
+    # VWAP Hesabi (Gunluk)
+    # yfinance 1d cektigimiz icin tum df bugunun verisi kabul edilir.
+    cumulative_vol = volume.cumsum()
+    if cumulative_vol.iloc[-1] == 0:
+        vwap = close  # hacim yoksa vwap = close
+    else:
+        vwap = (tp * volume).cumsum() / cumulative_vol
+
+    # EMA20 Hesabi
+    ema20 = close.ewm(span=20, adjust=False).mean()
+
+    # Hacim SMA20
+    vol_sma20 = volume.rolling(window=20).mean()
+
+    last_close = close.iloc[-1]
+    last_vwap = vwap.iloc[-1]
+    last_ema20 = ema20.iloc[-1]
+    last_vol = volume.iloc[-1]
+    avg_vol = vol_sma20.iloc[-1]
+
+    # Reversal (Cokus) Tespiti:
+    # Fiyat VWAP veya EMA20 altina iniyor VE hacim patlamis (ortalamanin 1.5 kati)
+    is_reversal_down = (last_close < last_vwap or last_close < last_ema20) and (last_vol > avg_vol * 1.5)
+
+    # Pullback (Nefes Alma) Tespiti:
+    # Fiyat geri cekilmis ama EMA20/VWAP uzerinde tutunuyor VE hacim dusuk/kurumus
+    is_pullback = (last_close > last_vwap) and (last_close > last_ema20) and (last_vol < avg_vol * 0.8)
+
+    # Reversal (Yukari Kopus) Tespiti:
+    # Fiyat VWAP uzerine hacimli kirilim yapiyor
+    is_reversal_up = (last_close > last_vwap) and (last_close > last_ema20) and (last_vol > avg_vol * 1.5)
+
+    if is_reversal_down:
+        return {
+            "action": "SAT",
+            "reason": "REVERSAL (COKUS): Fiyat VWAP/EMA destegini yuksek hacimle kirdi! Trend dondu."
+        }
+    elif is_reversal_up:
+        return {
+            "action": "AL",
+            "reason": "BREAKOUT: Fiyat VWAP direncini yuksek hacimle yukari kirdi. Momentum basladi."
+        }
+    elif is_pullback:
+        return {
+            "action": "BEKLE",
+            "reason": "PULLBACK: Fiyat dusuyor ancak hacim yok ve destekler kirilmadi. SATMA, yeni dip ara."
+        }
+    
+    return {
+        "action": "BEKLE",
+        "reason": "Piyasa stabil, ekstrem bir momentum veya kirilim yok."
+    }
+

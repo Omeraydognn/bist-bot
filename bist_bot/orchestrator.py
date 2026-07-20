@@ -190,25 +190,31 @@ class Orchestrator:
                 break
 
         # =====================================================
-        # ANLIK FIYAT (LIVE PRICE) & %1 MOMENTUM
+        # ANLIK FIYAT (LIVE PRICE) & QUANT REVERSAL HESABI
         # =====================================================
         live_price = last_close
-        live_change_pct = 0.0
+        quant_reversal_signal = None
         try:
             import yfinance as yf
-            live_info = yf.Ticker(ticker.yahoo_symbol).fast_info
-            if live_info and getattr(live_info, 'last_price', None):
-                live_price = live_info.last_price
-                if last_close:
-                    live_change_pct = ((live_price - last_close) / last_close) * 100
+            from bist_bot.analysis.scalping import analyze_quant_reversal
+            
+            # Hizli Quant Analizi icin 1-dakikalik mumlari cek (bugun)
+            df_1m = yf.download(ticker.yahoo_symbol, period="1d", interval="1m", progress=False, auto_adjust=False)
+            if df_1m is not None and not df_1m.empty:
+                if hasattr(df_1m.columns, "nlevels") and df_1m.columns.nlevels > 1:
+                    df_1m.columns = df_1m.columns.get_level_values(0)
+                
+                live_price = float(df_1m["Close"].iloc[-1])
+                quant_reversal_signal = analyze_quant_reversal(df_1m)
+                
         except Exception as e:
-            print(f"  [UYARI] Anlik fiyat cekilemedi: {e}")
+            print(f"  [UYARI] Anlik Quant/Fiyat verisi cekilemedi: {e}")
 
         result = {
             "symbol": ticker.symbol,
             "fiyat": round(live_price, 2) if live_price else None,
             "gecikmeli_fiyat": round(last_close, 2) if last_close else None,
-            "anlik_momentum_pct": round(live_change_pct, 2),
+            "quant_sinyal": quant_reversal_signal,
             "zaman": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "aksiyon": action,
             "guven": mtf.confidence,
