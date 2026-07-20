@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BıstBot — Trading P&L Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171e26; --panel2:#1e2731; --line:#2a3540;
+    --txt:#e6edf3; --muted:#8b98a5; --pos:#2ea043; --neg:#f85149;
+    --accent:#e30a17; /* Turkish red */ --accent2:#3b82f6; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
+  h1 .dot{color:var(--accent)}
+  .sub{color:var(--muted);font-size:12px;margin-top:3px}
+  .wrap{padding:20px 24px;max-width:1200px;margin:0 auto}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:34px;text-align:center;
+    background:var(--panel);transition:.15s;cursor:pointer}
+  .drop.hi{border-color:var(--accent2);background:var(--panel2)}
+  .drop h2{margin:0 0 6px;font-size:15px}
+  .drop p{margin:4px 0;color:var(--muted);font-size:12.5px}
+  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+  .btn:hover{border-color:var(--accent2)}
+  .btn.ghost{background:transparent}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .l{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+  .kpi .v{font-size:22px;font-weight:650;margin-top:6px;font-variant-numeric:tabular-nums}
+  .kpi .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .warnc{color:var(--warn)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:16px}
+  .card h3{margin:0 0 12px;font-size:13.5px;font-weight:600;color:var(--txt)}
+  .filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 0}
+  select,.filters label{font-size:12.5px;color:var(--muted)}
+  select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 8px}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;letter-spacing:.3px}
+  tbody tr:hover{background:var(--panel2)}
+  canvas{max-height:260px}
+  .hide{display:none}
+  .note{background:var(--panel2);border-left:3px solid var(--warn);padding:10px 14px;
+    border-radius:6px;font-size:12px;color:var(--muted);margin-top:16px}
+  .foot{color:var(--muted);font-size:11.5px;margin:22px 0 8px;line-height:1.6}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="dot">●</span> BıstBot — Trading P&amp;L Dashboard</h1>
+    <div class="sub">Borsa İstanbul intraday · reporting in TL · commission-free (spread &amp; slippage = cost)</div>
+  </div>
+  <div class="row">
+    <button class="btn ghost" id="demoBtn">Load format demo</button>
+    <button class="btn" id="loadBtn">Load trades.csv</button>
+    <input type="file" id="file" accept=".csv" class="hide">
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="empty">
+    <div class="drop" id="drop">
+      <h2>Drop your <code>trades.csv</code> here</h2>
+      <p>Export it from the bot's SQLite with <code>trades-export.sql</code> (schema in <code>trades-schema.md</code>).</p>
+      <p>Real data only — nothing is stored or sent anywhere; all math runs in your browser.</p>
+      <p style="margin-top:14px"><button class="btn" id="pickBtn">Choose file</button></p>
+    </div>
+    <div class="note"><b>Format demo</b> loads the 2-row example from the schema so you can see the layout.
+      It is clearly labelled sample data — replace it with your real export.</div>
+  </div>
+
+  <div id="dash" class="hide">
+    <div class="filters">
+      <label>Ticker <select id="fTicker"></select></label>
+      <label>Signal <select id="fSignal"></select></label>
+      <label>Month <select id="fMonth"></select></label>
+      <span id="srcTag" class="sub"></span>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid2">
+      <div class="card"><h3>Daily net P&amp;L (TL)</h3><canvas id="cDaily"></canvas></div>
+      <div class="card"><h3>Cumulative net P&amp;L (TL)</h3><canvas id="cCum"></canvas></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Net P&amp;L by ticker (TL)</h3><canvas id="cTicker"></canvas></div>
+      <div class="card"><h3>Actual vs target return (%)</h3><canvas id="cTarget"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Per-ticker breakdown</h3>
+      <table><thead><tr>
+        <th>Ticker</th><th>Trades</th><th>Win %</th><th>Gross</th><th>Slippage</th>
+        <th>Spread</th><th>Net</th><th>Avg ret %</th><th>Cost % of gross</th>
+      </tr></thead><tbody id="tTicker"></tbody></table>
+    </div>
+
+    <div class="card">
+      <h3>Trades <span class="sub" id="tradeCount"></span></h3>
+      <div style="overflow:auto;max-height:420px">
+      <table><thead><tr>
+        <th>Trade</th><th>Ticker</th><th>Date</th><th>Qty</th><th>Entry</th><th>Exit</th>
+        <th>Gross</th><th>Cost</th><th>Net</th><th>Ret %</th><th>Target %</th><th>Var (TL)</th>
+      </tr></thead><tbody id="tTrades"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Not financial, tax, or investment advice. Figures are for review by a qualified professional.
+    Net = gross − slippage − spread cost (commission = 0). Return is on entry notional.
+  </div>
+</div>
+
+<script>
+const TL = n => (n==null||isNaN(n)) ? "–" :
+  new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY',maximumFractionDigits:2}).format(n);
+const PCT = n => (n==null||isNaN(n)) ? "–" : new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(n*100)+"%";
+const PORTFOLIO = 100000;
+let charts = {}, RAW = [], SRC = "";
+
+// ---- CSV parse (quote-aware, simple) ----
+function parseCSV(text){
+  const rows=[]; let i=0,f='',row=[],q=false;
+  const push=()=>{row.push(f);f=''}; const nl=()=>{push();rows.push(row);row=[]};
+  while(i<text.length){const c=text[i];
+    if(q){ if(c=='"'){ if(text[i+1]=='"'){f+='"';i++} else q=false } else f+=c }
+    else { if(c=='"')q=true; else if(c==',')push(); else if(c=='\n')nl();
+           else if(c=='\r'){} else f+=c } i++; }
+  if(f.length||row.length)nl();
+  const head=rows.shift().map(h=>h.trim());
+  return rows.filter(r=>r.length>1||(r[0]&&r[0].trim())).map(r=>{
+    const o={}; head.forEach((h,j)=>o[h]=(r[j]??'').trim()); return o; });
+}
+
+// ---- build round-trips from legs ----
+function buildTrades(legs){
+  const g={};
+  legs.forEach(l=>{ (g[l.trade_id]=g[l.trade_id]||[]).push(l); });
+  const trips=[];
+  for(const id in g){
+    const legsS=g[id].slice().sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+    if(legsS.length<2) continue; // open position, skip from realized
+    const entry=legsS[0], exit=legsS[legsS.length-1];
+    const qty=+entry.quantity||+exit.quantity||0;
+    const eF=+entry.fill_price, xF=+exit.fill_price;
+    const long = (entry.side||'').toUpperCase()==='BUY';
+    const gross = long ? (xF-eF)*qty : (eF-xF)*qty;
+    const slip = legsS.reduce((s,l)=>{
+      const f=+l.fill_price, it=+l.intended_price, q=+l.quantity||qty;
+      if(isNaN(it)) return s;
+      return s + ((l.side||'').toUpperCase()==='BUY' ? (f-it)*q : (it-f)*q);
+    },0);
+    const spread = legsS.reduce((s,l)=>{
+      const sp=+l.spread_at_fill, q=+l.quantity||qty;
+      return s + (isNaN(sp)?0:sp/2*q); },0);
+    const net = gross - slip - spread;
+    const notional = eF*qty;
+    const tgt = entry.target_pct!==''&&entry.target_pct!=null ? +entry.target_pct : (exit.target_pct?+exit.target_pct:NaN);
+    const tgtTL = isNaN(tgt)?NaN:tgt*notional;
+    trips.push({id,ticker:entry.ticker,date:entry.session_date||(entry.timestamp||'').slice(0,10),
+      qty,entry:eF,exit:xF,gross,slip,spread,cost:slip+spread,net,
+      ret:notional?net/notional:NaN,target:tgt,tgtTL,
+      variance:isNaN(tgtTL)?NaN:net-tgtTL,signal:entry.signal_source||'—',win:net>0});
+  }
+  return trips.sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+
+function uniq(arr){return [...new Set(arr)].sort();}
+function opt(sel,vals,all){sel.innerHTML=`<option value="">${all}</option>`+
+  vals.map(v=>`<option>${v}</option>`).join('');}
+
+function applyFilters(trips){
+  const t=fTicker.value, s=fSignal.value, m=fMonth.value;
+  return trips.filter(x=>(!t||x.ticker===t)&&(!s||x.signal===s)&&(!m||(x.date||'').slice(0,7)===m));
+}
+
+function render(){
+  const all=buildTrades(RAW);
+  opt(fTicker,uniq(all.map(t=>t.ticker)),'All tickers');
+  opt(fSignal,uniq(all.map(t=>t.signal)),'All signals');
+  opt(fMonth,uniq(all.map(t=>(t.date||'').slice(0,7)).filter(Boolean)),'All months');
+  // restore saved filters
+  try{const s=JSON.parse(localStorage.getItem('bb_filters')||'{}');
+    if(s.t)fTicker.value=s.t; if(s.s)fSignal.value=s.s; if(s.m)fMonth.value=s.m;}catch(e){}
+  draw(all);
+  [fTicker,fSignal,fMonth].forEach(el=>el.onchange=()=>{
+    localStorage.setItem('bb_filters',JSON.stringify({t:fTicker.value,s:fSignal.value,m:fMonth.value}));
+    draw(all);});
+}
+
+function draw(all){
+  const T=applyFilters(all);
+  srcTag.textContent = SRC;
+  // KPIs
+  const net=T.reduce((s,t)=>s+t.net,0), gross=T.reduce((s,t)=>s+t.gross,0),
+    cost=T.reduce((s,t)=>s+t.cost,0), wins=T.filter(t=>t.win).length,
+    rets=T.map(t=>t.ret).filter(x=>!isNaN(x)),
+    avgRet=rets.length?rets.reduce((a,b)=>a+b,0)/rets.length:NaN,
+    hit=T.filter(t=>!isNaN(t.target)&&t.ret>=t.target).length,
+    withTgt=T.filter(t=>!isNaN(t.target)).length,
+    costPct=gross?cost/gross:NaN;
+  const sign=n=>n>=0?'pos':'neg';
+  kpis.innerHTML=[
+    ['Net realized P&L',TL(net),`gross ${TL(gross)}`,sign(net)],
+    ['Return on 100k TL',PCT(PORTFOLIO?net/PORTFOLIO:NaN),'period net / portfolio',sign(net)],
+    ['Trades closed',T.length,`${T.length?Math.round(wins/T.length*100):0}% win rate`,''],
+    ['Avg return / trade',PCT(avgRet),`${hit}/${withTgt} hit target`,sign(avgRet||0)],
+    ['Total trading cost',TL(cost),'slippage + spread',cost>0?'neg':''],
+    ['Cost % of gross',isNaN(costPct)?'–':PCT(costPct),costPct>0.5?'⚠ edge at risk':'of gross P&L',costPct>0.5?'warnc':''],
+  ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div>
+      <div class="v ${k[3]}">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
+
+  // daily aggregates
+  const days={}; T.forEach(t=>{const d=t.date||'?';(days[d]=days[d]||0);days[d]+=t.net;});
+  const dk=Object.keys(days).sort(); let cum=0; const cumV=dk.map(d=>cum+=days[d]);
+  // per ticker
+  const tk={}; T.forEach(t=>{const k=t.ticker;(tk[k]=tk[k]||{n:0,w:0,gross:0,slip:0,spread:0,net:0,ret:[]});
+    const o=tk[k];o.n++;if(t.win)o.w++;o.gross+=t.gross;o.slip+=t.slip;o.spread+=t.spread;o.net+=t.net;if(!isNaN(t.ret))o.ret.push(t.ret);});
+
+  chart('cDaily',{type:'bar',data:{labels:dk,datasets:[{data:dk.map(d=>days[d]),
+    backgroundColor:dk.map(d=>days[d]>=0?'#2ea04399':'#f8514999'),borderColor:dk.map(d=>days[d]>=0?'#2ea043':'#f85149'),borderWidth:1}]}});
+  chart('cCum',{type:'line',data:{labels:dk,datasets:[{data:cumV,borderColor:'#3b82f6',
+    backgroundColor:'#3b82f622',fill:true,tension:.25,pointRadius:2}]}});
+  const tkeys=Object.keys(tk);
+  chart('cTicker',{type:'bar',data:{labels:tkeys,datasets:[{data:tkeys.map(k=>tk[k].net),
+    backgroundColor:tkeys.map(k=>tk[k].net>=0?'#2ea04399':'#f8514999'),borderColor:tkeys.map(k=>tk[k].net>=0?'#2ea043':'#f85149'),borderWidth:1}]}});
+  const sc=T.filter(t=>!isNaN(t.target));
+  chart('cTarget',{type:'scatter',data:{datasets:[
+    {label:'Actual',data:sc.map((t,i)=>({x:i,y:t.ret*100})),backgroundColor:'#e30a17'},
+    {label:'Target',data:sc.map((t,i)=>({x:i,y:t.target*100})),backgroundColor:'#8b98a5'}]},
+    opts:{scales:{x:{title:{display:true,text:'trade #'}},y:{title:{display:true,text:'%'}}}}});
+
+  // per-ticker table
+  tTicker.innerHTML=tkeys.map(k=>{const o=tk[k];const ar=o.ret.length?o.ret.reduce((a,b)=>a+b,0)/o.ret.length:NaN;
+    const cp=o.gross?(o.slip+o.spread)/o.gross:NaN;
+    return `<tr><td>${k}</td><td>${o.n}</td><td>${Math.round(o.w/o.n*100)}%</td>
+      <td>${TL(o.gross)}</td><td class="neg">${TL(o.slip)}</td><td class="neg">${TL(o.spread)}</td>
+      <td class="${o.net>=0?'pos':'neg'}">${TL(o.net)}</td><td>${PCT(ar)}</td>
+      <td class="${cp>0.5?'warnc':''}">${isNaN(cp)?'–':PCT(cp)}</td></tr>`;}).join('')||'<tr><td colspan="9">No trades.</td></tr>';
+
+  // trades table
+  tradeCount.textContent=`(${T.length})`;
+  tTrades.innerHTML=T.map(t=>`<tr><td>${t.id}</td><td>${t.ticker}</td><td>${t.date}</td>
+    <td>${t.qty}</td><td>${TL(t.entry)}</td><td>${TL(t.exit)}</td>
+    <td>${TL(t.gross)}</td><td class="neg">${TL(t.cost)}</td>
+    <td class="${t.net>=0?'pos':'neg'}">${TL(t.net)}</td><td>${PCT(t.ret)}</td>
+    <td>${isNaN(t.target)?'–':PCT(t.target)}</td>
+    <td class="${t.variance>=0?'pos':'neg'}">${isNaN(t.variance)?'–':TL(t.variance)}</td></tr>`).join('')
+    ||'<tr><td colspan="12">No trades.</td></tr>';
+}
+
+function chart(id,cfg){
+  if(charts[id])charts[id].destroy();
+  const o=cfg.opts||{};
+  charts[id]=new Chart(document.getElementById(id),{type:cfg.type,data:cfg.data,
+    options:Object.assign({responsive:true,plugins:{legend:{display:cfg.type==='scatter',labels:{color:'#8b98a5'}}},
+      scales:Object.assign({x:{ticks:{color:'#8b98a5',maxRotation:0,autoSkip:true},grid:{color:'#2a354055'}},
+        y:{ticks:{color:'#8b98a5'},grid:{color:'#2a354055'}}},o.scales||{})},{})});
+}
+
+// ---- load handlers ----
+function loadText(txt,src){ RAW=parseCSV(txt); SRC=src||'';
+  document.getElementById('empty').classList.add('hide');
+  document.getElementById('dash').classList.remove('hide'); render(); }
+
+const file=document.getElementById('file');
+['loadBtn','pickBtn'].forEach(id=>document.getElementById(id).onclick=()=>file.click());
+file.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>loadText(r.result,'source: '+f.name);r.readAsText(f);};
+const drop=document.getElementById('drop');
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hi')}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hi')}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>loadText(r.result,'source: '+f.name);r.readAsText(f);});
+
+document.getElementById('demoBtn').onclick=()=>{
+  const demo=`trade_id,ticker,side,timestamp,quantity,intended_price,fill_price,spread_at_fill,target_pct,signal_source,session_date,is_forced_close,notes
+T-0001,ASELS,BUY,2026-07-20T10:32:15+03:00,100,182.40,182.50,0.20,0.015,RSI+MACD,2026-07-20,false,
+T-0001,ASELS,SELL,2026-07-20T11:05:41+03:00,100,185.10,185.00,0.20,0.015,RSI+MACD,2026-07-20,false,take-profit
+T-0002,ASELS,BUY,2026-07-20T13:10:00+03:00,150,181.00,181.10,0.20,0.012,bollinger,2026-07-20,false,
+T-0002,ASELS,SELL,2026-07-20T13:52:00+03:00,150,180.30,180.20,0.20,0.012,bollinger,2026-07-20,true,forced-close-loss
+T-0003,THYAO,BUY,2026-07-21T10:15:00+03:00,200,312.00,312.20,0.40,0.02,orderbook,2026-07-21,false,
+T-0003,THYAO,SELL,2026-07-21T10:58:00+03:00,200,318.00,318.10,0.40,0.02,orderbook,2026-07-21,false,take-profit`;
+  loadText(demo,'⚠ SAMPLE DEMO DATA — replace with your real export');
+};
+</script>
+</body>
+</html>
