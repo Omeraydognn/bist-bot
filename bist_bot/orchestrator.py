@@ -181,7 +181,7 @@ class Orchestrator:
         else:
             action = "BEKLE"
 
-        # Guncel Fiyati (Son Kapanis) Al
+        # Guncel Fiyati (Son Kapanis) Al (Gecikmeli)
         last_close = None
         for tf_key in ("5m", "15m", "30m", "1h", "1d"):
             rows = frames.get(tf_key)
@@ -189,9 +189,26 @@ class Orchestrator:
                 last_close = rows[-1].get("close")
                 break
 
+        # =====================================================
+        # ANLIK FIYAT (LIVE PRICE) & %1 MOMENTUM
+        # =====================================================
+        live_price = last_close
+        live_change_pct = 0.0
+        try:
+            import yfinance as yf
+            live_info = yf.Ticker(ticker.yahoo_symbol).fast_info
+            if live_info and getattr(live_info, 'last_price', None):
+                live_price = live_info.last_price
+                if last_close:
+                    live_change_pct = ((live_price - last_close) / last_close) * 100
+        except Exception as e:
+            print(f"  [UYARI] Anlik fiyat cekilemedi: {e}")
+
         result = {
             "symbol": ticker.symbol,
-            "fiyat": round(last_close, 2) if last_close else None,
+            "fiyat": round(live_price, 2) if live_price else None,
+            "gecikmeli_fiyat": round(last_close, 2) if last_close else None,
+            "anlik_momentum_pct": round(live_change_pct, 2),
             "zaman": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "aksiyon": action,
             "guven": mtf.confidence,

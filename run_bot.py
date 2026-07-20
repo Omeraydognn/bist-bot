@@ -70,7 +70,7 @@ def main():
     print("Web sunucusu baslatiliyor (Render.com icin)...")
     keep_alive()
 
-    orch.run_loop(interval_seconds=args.interval)
+    orch.run_loop(interval_seconds=60)
 
 
 if __name__ == "__main__":
