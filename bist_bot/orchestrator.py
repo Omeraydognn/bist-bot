@@ -193,7 +193,7 @@ class Orchestrator:
         # ANLIK FIYAT (LIVE PRICE) & QUANT REVERSAL HESABI
         # =====================================================
         live_price = last_close
-        quant_reversal_signal = None
+        quant_reversal_signal = {"action": "BEKLE", "reason": "Veri Yok"}
         try:
             import yfinance as yf
             from bist_bot.analysis.scalping import analyze_quant_reversal
