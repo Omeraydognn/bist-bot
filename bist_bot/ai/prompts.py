@@ -62,6 +62,11 @@ Emin değilsen, çelişkili sinyaller varsa, veriler karışıksa → BEKLE. Par
 Matematik motor "AL" diyorsa ama sen yukarıdaki kurallardan birinin ihlal edildiğini görüyorsan → VETO et, BEKLE de.
 Matematik motor "BEKLE" diyorsa ama sen KURAL 5 gibi çok güçlü bir Reversal Breakout (Yukarı Kırılım) görüyorsan → AL diyebilirsin.
 
+### KURAL 8: Dip ve Tavan Analizi (Tam Otonomi Yetkisi)
+Aşağıda sana verilen "Dip/Tavan Sinyali (Uyumsuzluk)" verisini çok dikkatli oku:
+- Eğer "NEGATIF UYUMSUZLUK (TAVAN TESPITI)" görüyorsan: Fiyat yükseliyor ama güç bitti demektir. Matematik motor ne derse desin, **HEMEN SAT** kararı ver.
+- Eğer "POZITIF UYUMSUZLUK (DIP TESPITI)" görüyorsan: Düşüş bitti, alıcılar güçleniyor demektir. Matematik motor "BEKLE" dese bile **AL** kararı ver.
+
 ## KARAR VERME ÇERÇEVESİ
 
 ### STRATEJİ GERÇEĞİ (50 günlük gerçek ASELS verisiyle kanıtlandı)
@@ -78,10 +83,11 @@ noktadan toparlanma alımı, kısa tutuş (max 45 dk), küçük ama sık kâr.
 
 ### SAT Koşulları (HERHANGİ BİRİ yeterli):
 1. Hacimli VWAP/EMA20 aşağı kırılımı (Kural 5 REVERSAL DOWN) → HEMEN SAT
-2. EMA5, EMA15'i aşağı kırıyor (Death Cross) → HEMEN SAT
-3. Fiyat VWAP'ın %1'den fazla altına düştü → SAT
-4. RSI > 75 VE hacim düşüyor → SAT (momentum tükeniyor)
-5. Matematik motor skoru < -0.15 → SAT
+2. KURAL 8 İHLALİ: Negatif Uyumsuzluk (Tavan Tespiti) görüldü → HEMEN SAT
+3. EMA5, EMA15'i aşağı kırıyor (Death Cross) → HEMEN SAT
+4. Fiyat VWAP'ın %1'den fazla altına düştü → SAT
+5. RSI > 75 VE hacim düşüyor → SAT (momentum tükeniyor)
+6. Matematik motor skoru < -0.15 → SAT
 
 ### BEKLE Koşulları:
 - AL'ın zorunlu koşullarından biri (EMA trendi veya VWAP) sağlanmıyorsa
@@ -110,15 +116,19 @@ Cevabını SADECE aşağıdaki JSON formatında ver. Başka hiçbir şey yazma:
 def build_analysis_prompt(analysis_data: dict) -> str:
     """Orchestrator'dan gelen analiz verisini AI'in anlayacagi formata cevirir."""
 
-    # Katman detaylarini formatla
+    # Katman detaylarini formatla ve dip/tavan sinyalini cikar
     katman_lines = []
     katmanlar = analysis_data.get("katmanlar", {})
+    dip_tavan_sinyali = "YOK"
     for tf, info in katmanlar.items():
         if isinstance(info, dict):
             score = info.get("score", "?")
             rsi = info.get("rsi", "?")
             sub = info.get("sub", {})
-            katman_lines.append(f"  {tf}: skor={score}, RSI={rsi}, alt_skorlar={sub}")
+            dt_signal = info.get("dip_tavan_sinyali", "YOK")
+            if dt_signal != "YOK" and tf in ["15m", "5m"]:
+                dip_tavan_sinyali = dt_signal
+            katman_lines.append(f"  {tf}: skor={score}, RSI={rsi}, Dip/Tavan={dt_signal}")
 
     katman_str = "\n".join(katman_lines) if katman_lines else "  Veri yok"
 
@@ -148,6 +158,7 @@ Hisse: {analysis_data.get("symbol", "?")}
 Anlık Fiyat: {analysis_data.get("fiyat", "?")} TL (Senin ekrandan izlediğin canlı fiyat)
 Gecikmeli Fiyat: {analysis_data.get("gecikmeli_fiyat", "?")} TL (TradingView mum kapanışı)
 Quant Reversal/Pullback Sinyali: {analysis_data.get("quant_sinyal", {}).get("reason", "Veri Yok")}
+Dip/Tavan Sinyali (Uyumsuzluk): {dip_tavan_sinyali}
 Saat: {analysis_data.get("zaman", "?")}
 
 ## TEKNİK GÖSTERGELER (Katman Bazlı)

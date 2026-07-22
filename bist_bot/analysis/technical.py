@@ -62,6 +62,38 @@ def compute_bollinger(df: pd.DataFrame, window: int = 20, num_std: float = 2.0):
     lower = sma - num_std * std
     return upper, sma, lower
 
+def detect_divergence(df: pd.DataFrame, rsi: pd.Series, lookback: int = 20) -> str:
+    """Fiyat tepeleri/dipleri ile RSI arasindaki uyumsuzluklari (Divergence) tespit eder."""
+    if len(df) < lookback * 2:
+        return "YOK"
+        
+    recent_df = df.iloc[-lookback:]
+    older_df = df.iloc[-lookback*2:-lookback]
+    
+    # Bearish Divergence (Tepe)
+    recent_high_idx = recent_df['high'].idxmax()
+    older_high_idx = older_df['high'].idxmax()
+    
+    price_higher_high = df.loc[recent_high_idx, 'high'] > df.loc[older_high_idx, 'high']
+    rsi_lower_high = rsi.loc[recent_high_idx] < rsi.loc[older_high_idx]
+    
+    # Gercek bir tepe yorgunlugu icin eski tepenin asiri alimda (RSI > 65) olmasi iyi bir filtredir
+    if price_higher_high and rsi_lower_high and rsi.loc[older_high_idx] > 65:
+        return "NEGATIF UYUMSUZLUK (TAVAN TESPITI - Yukselis Tukendi)"
+        
+    # Bullish Divergence (Dip)
+    recent_low_idx = recent_df['low'].idxmin()
+    older_low_idx = older_df['low'].idxmin()
+    
+    price_lower_low = df.loc[recent_low_idx, 'low'] < df.loc[older_low_idx, 'low']
+    rsi_higher_low = rsi.loc[recent_low_idx] > rsi.loc[older_low_idx]
+    
+    # Gercek bir dip sicramasi icin eski dibin asiri satimda (RSI < 35) olmasi iyi bir filtredir
+    if price_lower_low and rsi_higher_low and rsi.loc[older_low_idx] < 35:
+        return "POZITIF UYUMSUZLUK (DIP TESPITI - Dusus Bitti)"
+        
+    return "YOK"
+
 
 def compute_volume_signal(df: pd.DataFrame, window: int = 20) -> float:
     """Son hacim, ortalama hacme gore ne kadar yuksek/dusuk -> -1..+1 arasi normalize."""
@@ -99,6 +131,9 @@ def analyze(price_rows: list[dict]) -> dict:
     vwap_series = compute_vwap(df)
     vwap_last = vwap_series.iloc[-1] if not vwap_series.empty else np.nan
     vol_score = compute_volume_signal(df)
+    
+    rsi_series = compute_rsi(df)
+    divergence_signal = detect_divergence(df, rsi_series)
     
     ema5_series = compute_ema(df, 5)
     ema15_series = compute_ema(df, 15)
@@ -188,6 +223,7 @@ def analyze(price_rows: list[dict]) -> dict:
             "bollinger_lower": None if pd.isna(lower_last) else round(float(lower_last), 2),
             "ema5": None if pd.isna(ema5_last) else round(float(ema5_last), 2),
             "ema15": None if pd.isna(ema15_last) else round(float(ema15_last), 2),
+            "dip_tavan_sinyali": divergence_signal,
             "sub_scores": {k: round(v, 3) for k, v in sub_scores.items()},
         },
     }

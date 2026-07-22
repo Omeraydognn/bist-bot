@@ -95,6 +95,7 @@ def analyze_mtf(
             "score": round(res["score"], 3),
             "rsi": res["details"].get("rsi"),
             "sub": res["details"].get("sub_scores"),
+            "dip_tavan_sinyali": res["details"].get("dip_tavan_sinyali", "YOK"),
         }
         weighted_sum += res["score"] * weight
         weight_used += weight
